@@ -77,19 +77,27 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                             ).astype(np.float32)
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
-    def _init_items(self, n_items):
-        # variational parameters for beta
-        self.gamma_b = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(n_items, self.n_components)
-                            ).astype(np.float32)
-        self.rho_b = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(n_items, self.n_components)
-                            ).astype(np.float32)
-        self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
+    def _init_items(self, n_items, beta=False):
+        # if we pass in observed betas:
+        if beta:
+            self.Eb = beta
+            self.Elogb = np.log(beta)
+            self.gamma_b = None
+            self.rho_b = None
 
-    def fit(self, X, rows, cols, vad):
+        else: # proceed normally
+            # variational parameters for beta
+            self.gamma_b = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(n_items, self.n_components)
+                                ).astype(np.float32)
+            self.rho_b = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(n_items, self.n_components)
+                                ).astype(np.float32)
+            self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
+
+    def fit(self, X, rows, cols, vad, beta=False):
         '''Fit the model to the data in X.
 
         Parameters
@@ -103,9 +111,9 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             Returns the instance itself.
         '''
         n_items, n_users = X.shape
-        self._init_items(n_items)
+        self._init_items(n_items, beta=beta)
         self._init_users(n_users)
-        self._update(X, rows, cols, vad)
+        self._update(X, rows, cols, vad, beta=beta)
         return self
 
     #def transform(self, X, attr=None):
@@ -137,12 +145,16 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     #    self._update(X, update_beta=False)
     #    return getattr(self, attr)
 
-    def _update(self, X, rows, cols, vad):
+    def _update(self, X, rows, cols, vad, beta=False):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
             self._update_users(X, rows, cols)
-            self._update_items(X, rows, cols)
+            if beta:
+                # do nothing if we have observed betas.
+                pass
+            else:
+                self._update_items(X, rows, cols)
             pred_ll = self.pred_loglikeli(**vad)
             improvement = (pred_ll - old_pll) / abs(old_pll)
             if self.verbose:
