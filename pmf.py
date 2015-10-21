@@ -70,31 +70,32 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.gamma_t = self.smoothness * \
             np.random.gamma(self.smoothness, 1. / self.smoothness,
                             size=(self.n_components, n_users)
-                            ).astype(np.float32)
+                            ).astype(np.float64)
         self.rho_t = self.smoothness * \
             np.random.gamma(self.smoothness, 1. / self.smoothness,
                             size=(self.n_components, n_users)
-                            ).astype(np.float32)
+                            ).astype(np.float64)
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
     def _init_items(self, n_items, beta=False):
         # if we pass in observed betas:
-        if beta:
+        if type(beta) == np.ndarray:
+            print 'initializing beta to be the observed one'
             self.Eb = beta
-            self.Elogb = np.log(beta)
+            self.Elogb = None
             self.gamma_b = None
             self.rho_b = None
-
         else: # proceed normally
+            print 'initializing normal variational params'
             # variational parameters for beta
             self.gamma_b = self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(n_items, self.n_components)
-                                ).astype(np.float32)
+                                ).astype(np.float64)
             self.rho_b = self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(n_items, self.n_components)
-                                ).astype(np.float32)
+                                ).astype(np.float64)
             self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
     def fit(self, X, rows, cols, vad, beta=False):
@@ -149,8 +150,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
-            self._update_users(X, rows, cols)
-            if beta:
+            self._update_users(X, rows, cols, beta=beta)
+            if type(beta) == np.ndarray:
                 # do nothing if we have observed betas.
                 pass
             else:
@@ -166,32 +167,73 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             old_pll = pred_ll
         pass
 
-    def _update_users(self, X, rows, cols):
-        ratioT = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
+    def _update_users(self, X, rows, cols, beta=None):
+        xexplog = self._xexplog(rows, cols, beta=beta)
+        ratioT = sparse.csr_matrix(( X.data / xexplog,
                                     (rows, cols)),
-                                   dtype=np.float32, shape=X.shape).transpose()
-        self.gamma_t = self.a + np.exp(self.Elogt) * \
-            ratioT.dot(np.exp(self.Elogb)).T
+                                   dtype=np.float64, shape=X.shape).transpose()
+        if type(beta) == np.ndarray:
+            # for n in range(0, self.Eb.shape[0]+1):
+            #     dot = ratioT[0,0:n].dot(self.Eb[0:n,0])
+            #     if np.isnan(dot):
+            #         print 'got nan at'
+            #         print n
+            # for n in range(ratioT[0].shape[0]+1):
+            #     prod = ratioT[0,n] * (self.Eb[n,0])
+            #     if np.isnan(prod):
+            #         print n
+            #     if n % 10000 == 0:
+            #         print 'iter'
+            #         print n
+            # print 'ratioT[0,:] dot Eb[:,0] at 157141'
+            # print ratioT[0,157141] # = inf!
+            # print self.Eb[157141, 0]
+            # print ratioT[0,157141] * self.Eb[157141, 0]
+            #dotprod = 0
+            # for n, el in enumerate(self.Eb[:,0]):
+            #     prod = el * ratioT[0, n]
+            #     dotprod += prod
+            #     if np.isnan(dotprod):
+            #         print 'got dot product nan at:' + str(n)
+            #     if np.isnan(prod):
+            #         print 'got prod nan at ' + str(n)
+            #print ratioT[0,:].dot(self.Eb[:,0]) #was =nan with dropped docs!
+            # we don't have Elogb and don't need it.
+            # add trick for logsumexp overflow prevention
+            # self.gamma_t = self.a + np.exp(self.Elogt - self.Elogt.max()) * \
+            #     ratioT.dot(self.Eb).T
+            self.gamma_t = self.a + np.exp(self.Elogt) * \
+                ratioT.dot(self.Eb).T
+        else:
+            self.gamma_t = self.a + np.exp(self.Elogt) * \
+                ratioT.dot(np.exp(self.Elogb)).T
         self.rho_t = self.b + np.sum(self.Eb, axis=0, keepdims=True).T
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
     def _update_items(self, X, rows, cols):
         ratio = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
                                    (rows, cols)),
-                                  dtype=np.float32, shape=X.shape)
+                                  dtype=np.float64, shape=X.shape)
         self.gamma_b = self.c + np.exp(self.Elogb) * \
             ratio.dot(np.exp(self.Elogt.T))
         self.rho_b = self.d + np.sum(self.Et, axis=1)
         self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
-    def _xexplog(self, rows, cols):
+    def _xexplog(self, rows, cols, beta=None):
         '''
         sum_k exp(E[log theta_{ik} * beta_{kd}])
         '''
-        data = _inner(np.exp(self.Elogb), np.exp(self.Elogt), rows, cols)
+        if type(beta) == np.ndarray:
+            # add trick for log sum exp overflow prevention
+            #data = _inner(self.Eb, np.exp(self.Elogt - self.Elogt.max()), rows, cols)
+            data = _inner(self.Eb, np.exp(self.Elogt), rows, cols)
+        else:
+            data = _inner(np.exp(self.Elogb), np.exp(self.Elogt), rows, cols)
         return data
 
     def pred_loglikeli(self, X_new, rows_new, cols_new):
+        #print self.Eb[0]
+        #print self.Et[:,0]
         X_pred = _inner(self.Eb, self.Et, rows_new, cols_new)
         pred_ll = np.mean(X_new * np.log(X_pred) - X_pred)
         return pred_ll
@@ -200,7 +242,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
 def _inner(beta, theta, rows, cols):
     n_ratings = rows.size
     n_components, n_users = theta.shape
-    data = np.empty(n_ratings, dtype=np.float32)
+    data = np.empty(n_ratings, dtype=np.float64)
     code = r"""
     for (int i = 0; i < n_ratings; i++) {
        data[i] = 0.0;
