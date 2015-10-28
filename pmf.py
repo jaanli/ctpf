@@ -65,17 +65,24 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.c = float(kwargs.get('c', 0.1))
         self.d = float(kwargs.get('d', 0.1))
 
-    def _init_users(self, n_users):
-        # variational parameters for theta
-        self.gamma_t = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(self.n_components, n_users)
-                            ).astype(np.float64)
-        self.rho_t = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(self.n_components, n_users)
-                            ).astype(np.float64)
-        self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
+    def _init_users(self, n_users, theta=theta):
+        if type(beta) == np.ndarray:
+            print 'initializing theta to be the observed one'
+            self.Et = theta
+            self.Elogt = None
+            self.gamma_t = None
+            self.rho_t = None
+        else:
+            # variational parameters for theta
+            self.gamma_t = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(self.n_components, n_users)
+                                ).astype(np.float64)
+            self.rho_t = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(self.n_components, n_users)
+                                ).astype(np.float64)
+            self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
     def _init_items(self, n_items, beta=False):
         # if we pass in observed betas:
@@ -113,7 +120,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         '''
         n_items, n_users = X.shape
         self._init_items(n_items, beta=beta)
-        self._init_users(n_users)
+        self._init_users(n_users, theta=theta)
         self._update(X, rows, cols, vad, beta=beta)
         return self
 
