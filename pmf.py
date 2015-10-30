@@ -65,7 +65,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.c = float(kwargs.get('c', 0.1))
         self.d = float(kwargs.get('d', 0.1))
 
-    def _init_users(self, n_users, theta=theta):
+    def _init_users(self, n_users, theta=False, beta=False):
         if type(beta) == np.ndarray:
             print 'initializing theta to be the observed one'
             self.Et = theta
@@ -105,7 +105,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                                 ).astype(np.float64)
             self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
-    def fit(self, X, rows, cols, vad, beta=False):
+    def fit(self, X, rows, cols, vad, beta=False, theta=False):
         '''Fit the model to the data in X.
 
         Parameters
