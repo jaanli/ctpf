@@ -77,11 +77,11 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             self.gamma_t = self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(self.n_components, n_users)
-                                ).astype(np.float64)
+                                ).astype(np.float32)
             self.rho_t = self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(self.n_components, n_users)
-                                ).astype(np.float64)
+                                ).astype(np.float32)
             self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
     def _init_items(self, n_items, beta=False):
@@ -98,11 +98,11 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             self.gamma_b = self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(n_items, self.n_components)
-                                ).astype(np.float64)
+                                ).astype(np.float32)
             self.rho_b = self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(n_items, self.n_components)
-                                ).astype(np.float64)
+                                ).astype(np.float32)
             self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
     def fit(self, X, rows, cols, vad, beta=False, theta=False):
@@ -178,7 +178,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         xexplog = self._xexplog(rows, cols, beta=beta)
         ratioT = sparse.csr_matrix(( X.data / xexplog,
                                     (rows, cols)),
-                                   dtype=np.float64, shape=X.shape).transpose()
+                                   dtype=np.float32, shape=X.shape).transpose()
         if type(beta) == np.ndarray:
             # for n in range(0, self.Eb.shape[0]+1):
             #     dot = ratioT[0,0:n].dot(self.Eb[0:n,0])
@@ -220,7 +220,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     def _update_items(self, X, rows, cols):
         ratio = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
                                    (rows, cols)),
-                                  dtype=np.float64, shape=X.shape)
+                                  dtype=np.float32, shape=X.shape)
         self.gamma_b = self.c + np.exp(self.Elogb) * \
             ratio.dot(np.exp(self.Elogt.T))
         self.rho_b = self.d + np.sum(self.Et, axis=1)
@@ -249,7 +249,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
 def _inner(beta, theta, rows, cols):
     n_ratings = rows.size
     n_components, n_users = theta.shape
-    data = np.empty(n_ratings, dtype=np.float64)
+    data = np.empty(n_ratings, dtype=np.float32)
     code = r"""
     for (int i = 0; i < n_ratings; i++) {
        data[i] = 0.0;

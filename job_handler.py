@@ -54,7 +54,7 @@ parser.add_argument('--debug',
 args = parser.parse_args()
 
 
-print '=> preprocessing'
+print '=> loading metadata'
 id2arxiv_info = pd.read_csv(args.item_info_file, header=None, delimiter='\t', names=['arxiv_id', 'categories', 'title', 'date'])
 
 # drop articles with no category
@@ -69,6 +69,8 @@ n_docs = np.unique(unique_did).shape[0]
 if args.observed_topics:
   document_category_dummies = id2arxiv_info['categories'].str.join(sep='').str.get_dummies(sep=' ')
   category_list = list(document_category_dummies.columns)
+  n_categories = len(category_list)
+  print 'num categories (k) = {}'.format(n_categories)
   observed_categories = document_category_dummies.as_matrix().astype(np.float32)
 
   # check if we have zeros in all rows for some docs
@@ -87,13 +89,13 @@ print 'num docs is {}, num users is {}'.format(n_docs, n_users)
 print '=> loading data'
 train_data, rows, cols = rec_eval.load_data(args.train_file, (n_docs, n_users), args.binarize)
 
-vad_data, rows_vad, cols_vad = rec_eval.load_data(args.validation_file, (n_docs, n_users), args.binarize)
+vad_smat, rows_vad, cols_vad = rec_eval.load_data(args.validation_file, (n_docs, n_users), args.binarize)
 
-vad = dict(X_new=vad_data,
+vad = dict(X_new=vad_smat.data,
            rows_new=rows_vad,
            cols_new=cols_vad)
 
 print '=> running fit'
-coder = pmf.PoissonMF(n_components=166, random_state=98765, verbose=True, a=0.1, b=0.1, c=0.1, d=0.1)
+coder = pmf.PoissonMF(n_components=n_categories, random_state=98765, verbose=True, a=0.1, b=0.1, c=0.1, d=0.1)
 
 coder.fit(train_data, rows, cols, vad, beta=observed_categories)
