@@ -13,6 +13,7 @@ import numpy as np
 from scipy import sparse, special, weave
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+import logging
 
 class PoissonMF(BaseEstimator, TransformerMixin):
     ''' Poisson matrix factorization with batch inference '''
@@ -33,6 +34,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             np.random.setstate(self.random_state)
 
         self._parse_args(**kwargs)
+        self.logger = logging.getLogger(__name__)
+
 
     def _parse_args(self, **kwargs):
         self.a = float(kwargs.get('a', 0.1))
@@ -55,7 +58,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     def _init_users(self, n_users, theta=False):
         # if we pass in observed thetas:
         if type(theta) == np.ndarray:
-            print 'initializing theta to be the observed one'
+            self.logger.info('initializing theta to be the observed one')
             self.Et = theta
             self.Elogt = None
             self.gamma_t = None
@@ -75,7 +78,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     def _init_items(self, n_items, beta=None):
         # if we pass in observed betas:
         if type(beta) == np.ndarray:
-            print 'initializing beta to be the observed one'
+            self.logger.info('initializing beta to be the observed one')
             self.Ebs = beta
             self.Elogbs = None
             self.gamma_bs = None
@@ -117,7 +120,6 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self: object
             Returns the instance itself.
         '''
-        print 'initializing'
         n_items, n_users = X.shape
         self._init_items(n_items, beta=beta)
         self._init_users(n_users, theta=theta)
@@ -137,13 +139,12 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 pass
             else:
                 self._update_items(X, rows, cols)
-            print 'updating artists'
             self._update_artists(X,rows,cols, theta=theta)
             pred_ll = self.pred_loglikeli(**vad)
             improvement = (pred_ll - old_pll) / abs(old_pll)
             if self.verbose:
-                txt = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\tImprovement: %.5f' % (i, pred_ll, old_pll, improvement)
-                print(txt)
+                string = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\tImprovement: %.5f' % (i, pred_ll, old_pll, improvement)
+                self.logger.info(string)
                 #sys.stdout.flush()
             if improvement < self.tol:
                 break

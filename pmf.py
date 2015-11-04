@@ -5,8 +5,7 @@ Poisson matrix factorization with Batch inference
 CREATED: 2014-03-25 02:06:52 by Dawen Liang <dliang@ee.columbia.edu>
 
 """
-
-import sys
+import logging
 import numpy as np
 from scipy import sparse, special, weave
 
@@ -44,6 +43,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         **kwargs: dict
             Model hyperparameters
         '''
+        self.logger = logging.getLogger(__name__)
 
         self.n_components = n_components
         self.max_iter = max_iter
@@ -59,6 +59,26 @@ class PoissonMF(BaseEstimator, TransformerMixin):
 
         self._parse_args(**kwargs)
 
+        # # create logger
+        # self.logger = logging.getLogger('pmf')
+        # self.logger.setLevel(logging.DEBUG)
+        # # create file handler which logs even debug messages
+        # fh = logging.FileHandler(self.out_dir + 'pmf.log')
+        # fh.setLevel(logging.DEBUG)
+        # # create console handler with a higher log level
+        # ch = logging.StreamHandler()
+        # ch.setLevel(logging.DEBUG)
+        # # create formatter and add it to the handlers
+        # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(lineno)d - %(message)s')
+        # fh.setFormatter(formatter)
+        # ch.setFormatter(formatter)
+        # # add the handlers to the logger
+        # self.logger.addHandler(fh)
+        # self.logger.addHandler(ch)
+        # # example
+        # #self.logger.info('test log creating an instance of auxiliary_module.Auxiliary')
+
+
     def _parse_args(self, **kwargs):
         self.a = float(kwargs.get('a', 0.1))
         self.b = float(kwargs.get('b', 0.1))
@@ -67,7 +87,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
 
     def _init_users(self, n_users, theta=False, beta=False):
         if type(beta) == np.ndarray:
-            print 'initializing theta to be the observed one'
+            self.logger.info('initializing theta to be the observed one')
             self.Et = theta
             self.Elogt = None
             self.gamma_t = None
@@ -87,13 +107,13 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     def _init_items(self, n_items, beta=False):
         # if we pass in observed betas:
         if type(beta) == np.ndarray:
-            print 'initializing beta to be the observed one'
+            self.logger.info('initializing beta to be the observed one')
             self.Eb = beta
             self.Elogb = None
             self.gamma_b = None
             self.rho_b = None
         else: # proceed normally
-            print 'initializing normal variational params'
+            self.logger.info('initializing normal variational params')
             # variational parameters for beta
             self.gamma_b = self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
@@ -166,15 +186,14 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             pred_ll = self.pred_loglikeli(**vad)
             improvement = (pred_ll - old_pll) / abs(old_pll)
             if self.verbose:
-                print('ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t'
-                      'Improvement: %.5f' % (i, pred_ll, old_pll, improvement))
-                sys.stdout.flush()
+                string = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t Improvement: %.5f' % (i, pred_ll, old_pll, improvement)
+                self.logger.info(string)
             if improvement < self.tol:
                 break
             old_pll = pred_ll
         pass
 
-    def _update_users(self, X, rows, cols, beta=None):
+    def _update_users(self, X, rows, cols, beta=False):
         xexplog = self._xexplog(rows, cols, beta=beta)
         ratioT = sparse.csr_matrix(( X.data / xexplog,
                                     (rows, cols)),
@@ -226,7 +245,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.rho_b = self.d + np.sum(self.Et, axis=1)
         self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
-    def _xexplog(self, rows, cols, beta=None):
+    def _xexplog(self, rows, cols, beta=False):
         '''
         sum_k exp(E[log theta_{ik} * beta_{kd}])
         '''
