@@ -131,7 +131,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
     def fit(self, X, rows, cols, vad,
-        beta=False, theta=False, categorywise=False, fit_opt='default'):
+        beta=False, theta=False, categorywise=False, fit_type='default',
+        zero_untrained_components=False):
         '''Fit the model to the data in X.
 
         Parameters
@@ -148,7 +149,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self._init_items(n_items, beta=beta, categorywise=categorywise)
         self._init_users(n_users, theta=theta)
         self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise,
-            fit_opt=fit_opt)
+            fit_type=fit_type,
+            zero_untrained_components=zero_untrained_components)
         return self
 
     #def transform(self, X, attr=None):
@@ -181,7 +183,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     #    return getattr(self, attr)
 
     def _update(self, X, rows, cols, vad, beta=False, categorywise=False,
-        fit_opt='default', update='default'):
+        fit_type='default', update='default', zero_untrained_components=False):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
@@ -189,30 +191,54 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             if type(beta) == np.ndarray and not categorywise:
                 # do nothing if we have observed betas.
                 pass
-            elif (type(beta) == np.ndarray and categorywise and
-                fit_opt == 'alternating_updates'):
-                # alternate between updating in-category and out-category components of items
-                self._update_items(X, rows, cols, beta=beta,
-                    categorywise=categorywise, iteration=i,
-                    update='alternating')
-            elif (type(beta) == np.ndarray and categorywise and
-                fit_opt == 'converge_in_category_first'):
-                # first update in-category components
-                if update == 'default':
-                    self._update_items(X, rows, cols, beta=beta,
-                        categorywise=categorywise, update='in_category')
-                else:
-                    self._update_items(X, rows, cols, beta=beta,
-                        categorywise=categorywise, update=update)
-            elif (type(beta) == np.ndarray and categorywise and
-                fit_opt == 'converge_out_category_first'):
-                # first update in-category components
-                if update == 'default':
-                    self._update_items(X, rows, cols, beta=beta,
-                        categorywise=categorywise, update='out_category')
-                else:
-                    self._update_items(X, rows, cols, beta=beta,
-                        categorywise=categorywise, update=update)
+            elif fit_type != 'default':
+                if zero_untrained_components and i == 1 and update == 'default':
+                    # store the initial values somewhere, then zero them out,
+                    # then load them back in once they've been fit
+                    beta_bool = beta.astype(bool)
+                    beta_bool_not = np.logical_not(beta_bool)
+                    small_num = 1e-5
+                    if fit_type == 'converge_in_category_first':
+                        # zero out out_category components
+                        gamma_b_out_category = self.gamma_b[beta_bool_not]
+                        rho_b_out_category = self.rho_b[beta_bool_not]
+                        self.gamma_b[beta_bool_not] = small_num
+                        self.rho_b[beta_bool_not] = small_num
+                    elif fit_type == 'converge_out_category_first':
+                        # zero out in_category components
+                        gamma_b_in_category = self.gamma_b[beta_bool]
+                        rho_b_in_category = self.rho_b[beta_bool]
+                        self.gamma_b[beta_bool] = small_num
+                        self.rho_b[beta_bool] = small_num
+                if (type(beta) == np.ndarray and categorywise and
+                    fit_type == 'alternating_updates'):
+                    # alternate between updating in-category and out-category components of items
+                    if i % 2 == 0:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, iteration=i,
+                            update='in_category')
+                    else:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, iteration=i,
+                            update='out_category')
+                elif (type(beta) == np.ndarray and categorywise and
+                    fit_type == 'converge_in_category_first'):
+                    # first update in-category components
+                    if update == 'default':
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update='in_category')
+                    else:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update=update)
+                elif (type(beta) == np.ndarray and categorywise and
+                    fit_type == 'converge_out_category_first'):
+                    # first update out-category components
+                    if update == 'default':
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update='out_category')
+                    else:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update=update)
             else:
                 self._update_items(X, rows, cols)
             pred_ll = self.pred_loglikeli(**vad)
@@ -224,16 +250,26 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 string = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t Improvement: %.5f' % (i, pred_ll, old_pll, improvement)
                 self.logger.info(string)
             if improvement < self.tol and i > self.min_iter:
-                if update == 'default' and fit_opt != 'default':
-                    if fit_opt == 'converge_in_category_first':
+                if update == 'default' and fit_type != 'default':
+                    if fit_type == 'converge_in_category_first':
                         # we converged in-category. now converge out_category
+                        if zero_untrained_components:
+                            self.logger.info(
+                                're-load initial values for out_category')
+                            self.gamma_b[beta_bool_not] = gamma_b_out_category
+                            self.rho_b[beta_bool_not] = rho_b_out_category
                         self._update(X, rows, cols, vad, beta=beta,
-                            categorywise=categorywise, fit_opt=fit_opt,
+                            categorywise=categorywise, fit_type=fit_type,
                             update='out_category')
-                    if fit_opt == 'converge_out_category_first':
+                    if fit_type == 'converge_out_category_first':
                         # we converged out-category. now converge in_category
+                        if zero_untrained_components:
+                            self.logger.info(
+                                're-load initial values for in_category')
+                            self.gamma_b[beta_bool] = gamma_b_in_category
+                            self.rho_b[beta_bool] = rho_b_in_category
                         self._update(X, rows, cols, vad, beta=beta,
-                            categorywise=categorywise, fit_opt=fit_opt,
+                            categorywise=categorywise, fit_type=fit_type,
                             update='in_category')
                 break
             old_pll = pred_ll
@@ -283,32 +319,34 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
     def _update_items(self, X, rows, cols, beta=False, categorywise=False,
-        iteration=None):
+        iteration=None, update='default'):
         ratio = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
                                    (rows, cols)),
                                   dtype=np.float32, shape=X.shape)
-        if type(beta) == np.ndarray and categorywise:
+        if (type(beta) == np.ndarray and
+                categorywise and
+                update != 'default'):
+
             beta_bool = beta.astype(bool)
             gamma_b_updated = self.c + np.exp(self.Elogb) * \
                 ratio.dot(np.exp(self.Elogt.T))
             rho_b_updated = self.d + np.sum(self.Et, axis=1)
             rho_b_updated_reshaped = np.reshape(np.repeat(rho_b_updated,
                 self.rho_b.shape[0], axis=0), self.rho_b.shape)
-            if iteration % 2 == 0:
-                self.logger.info('updating *only* in-category parameters')
-                self.gamma_b[beta_bool] = gamma_b_updated[beta_bool]
-                self.rho_b[beta_bool] = rho_b_updated_reshaped[beta_bool]
-            else:
-                beta_bool_not = np.logical_not(beta_bool)
-                self.logger.info('updating *only* out-category parameters')
-                self.gamma_b[beta_bool_not] = gamma_b_updated[beta_bool_not]
-                self.rho_b[beta_bool_not] = \
-                    rho_b_updated_reshaped[beta_bool_not]
+            if update == 'in_category':
+                    self.logger.info('updating *only* in-category parameters')
+                    self.gamma_b[beta_bool] = gamma_b_updated[beta_bool]
+                    self.rho_b[beta_bool] = rho_b_updated_reshaped[beta_bool]
+            elif update == 'out_category':
+                    beta_bool_not = np.logical_not(beta_bool)
+                    self.logger.info('updating *only* out-category parameters')
+                    self.gamma_b[beta_bool_not] = gamma_b_updated[beta_bool_not]
+                    self.rho_b[beta_bool_not] = \
+                        rho_b_updated_reshaped[beta_bool_not]
         else:
             self.gamma_b = self.c + np.exp(self.Elogb) * \
                 ratio.dot(np.exp(self.Elogt.T))
             self.rho_b = self.d + np.sum(self.Et, axis=1)
-            print self.rho_b.shape
         self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
     def _xexplog(self, rows, cols, beta=False):
@@ -324,8 +362,6 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         return data
 
     def pred_loglikeli(self, X_new, rows_new, cols_new):
-        #print self.Eb[0]
-        #print self.Et[:,0]
         X_pred = _inner(self.Eb, self.Et, rows_new, cols_new)
         pred_ll = np.mean(X_new * np.log(X_pred) - X_pred)
         return pred_ll

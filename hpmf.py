@@ -16,7 +16,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 class HPoissonMF(BaseEstimator, TransformerMixin):
     ''' Hierarchical Poisson matrix factorization with batch inference '''
-    def __init__(self, n_components=100, max_iter=100, tol=0.0001,
+    def __init__(self, n_components=100, max_iter=100, min_iter=1, tol=0.0001,
                  smoothness=100, random_state=None, verbose=False,
                  **kwargs):
         ''' Hierarchical Poisson matrix factorization
@@ -53,6 +53,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         self.smoothness = smoothness
         self.random_state = random_state
         self.verbose = verbose
+        self.min_iter = min_iter
 
         if type(self.random_state) is int:
             np.random.seed(self.random_state)
@@ -110,7 +111,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         self.Eeta, _ = _compute_expectations(self.gamma_eta, self.rho_eta)
 
     def fit(self, X, rows, cols, vad,
-        beta=False, theta=False, categorywise=False):
+        beta=False, theta=False, categorywise=False, fit_type='default'):
         '''Fit the model to the data in X.
 
         Parameters
@@ -171,7 +172,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
                 self.logger.info('ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t'
                       'Improvement: %.5f' % (i, pred_ll, old_pll, improvement))
                 sys.stdout.flush()
-            if improvement < self.tol and i > 10:
+            if improvement < self.tol and i > self.min_iter:
                 break
             old_pll = pred_ll
         pass

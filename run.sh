@@ -15,7 +15,10 @@ python job_handler.py \
   --user_info_file=${dir}users.tsv \
   --out_dir=${out_dir} \
   --binarize_true \
-  --model=hpmf_categorywise \
-  --min_iterations=20 \
+  --model=pmf \
+  --categorywise_true \
+  --fit_type=converge_in_category_first \
+  --zero_untrained_components_true \
+  --min_iterations=10 \
   --observed_topics_true \
   --stdout \

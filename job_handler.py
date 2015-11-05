@@ -77,10 +77,32 @@ parser.add_argument('--model',
   type=str,
   help='what model / algo to use')
 
-parser.add_argument('--fit_opt',
+parser.add_argument('--categorywise_true',
+  dest='categorywise',
+  action='store_true',
+  help='categorywise fit')
+
+parser.add_argument('--categorywise_false',
+  dest='categorywise',
+  action='store_false',
+  help='categorywise fit')
+
+parser.add_argument('--fit_type',
   type=str,
   default='default',
-  help='how to fit the model, fit options')
+  help='how to fit the model, fit options. converge_in_category_first, converge_out_category_first, alternating_updates')
+
+parser.add_argument('--zero_untrained_components_true',
+  dest='zero_untrained_components',
+  action='store_true',
+  default=False,
+  help='zero out untrained components')
+
+parser.add_argument('--zero_untrained_components_false',
+  dest='zero_untrained_components',
+  action='store_false',
+  default=False,
+  help='categorywise fit')
 
 parser.add_argument('--tolerance',
   type=float,
@@ -98,6 +120,10 @@ parser.add_argument('--min_iterations',
   help='minimum number of iterations')
 
 args = parser.parse_args()
+
+# validate arguments
+if args.categorywise and args.fit_type == 'default':
+    raise Exception('need to specify fit_type for categorywise!')
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -167,7 +193,7 @@ logger.info('=>running fit')
 
 h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'w')
 
-if args.model == 'pmf' or args.model == 'pmf_categorywise':
+if args.model == 'pmf':
   coder = pmf.PoissonMF(n_components=n_categories, random_state=args.seed,
     verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger, tol=args.tolerance,
     min_iter=args.min_iterations)
@@ -177,11 +203,9 @@ if args.model == 'pmf' or args.model == 'pmf_categorywise':
     logging.info('loaded fit!')
   else:
     if args.observed_topics:
-      if args.model == 'pmf_categorywise':
         coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-          categorywise=True, fit_opt=args.fit_opt)
-      else:
-        coder.fit(train_data, rows, cols, validation, beta=observed_categories)
+          categorywise=args.categorywise, fit_type=args.fit_type,
+          zero_untrained_components=args.zero_untrained_components)
     else:
       coder.fit(train_data, rows, cols, validation)
 
@@ -225,9 +249,9 @@ elif args.model == 'ctpf':
     h5f.create_dataset('Eba_t', data=Eba_t)
     h5f.create_dataset('Ebs_t', data=Ebs_t)
 
-elif args.model == 'hpmf' or args.model == 'hpmf_categorywise':
+elif args.model == 'hpmf':
   coder = hpmf.HPoissonMF(n_components=n_categories, max_iter=500,
-    random_state=98765, verbose=True,
+    random_state=98765, verbose=True, min_iter=args.min_iterations,
     a=0.3, c=0.3, a_ksi=0.3, b_ksi=0.3, c_eta=0.3, d_eta=0.3)
   if args.resume:
     Eb_t = h5f['Eb_t'][:]
@@ -235,11 +259,8 @@ elif args.model == 'hpmf' or args.model == 'hpmf_categorywise':
     logging.info('loaded fit!')
   else:
     if args.observed_topics:
-      if args.model == 'hpmf_categorywise':
-        coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-          categorywise=True, fit_opt=args.fit_opt)
-      else:
-        coder.fit(train_data, rows, cols, validation, beta=observed_categories)
+      coder.fit(train_data, rows, cols, validation, beta=observed_categories,
+        categorywise=args.categorywise, fit_type=args.fit_type)
     else:
       coder.fit(train_data, rows, cols, validation)
 
