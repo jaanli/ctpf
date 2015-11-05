@@ -15,9 +15,7 @@ python job_handler.py \
   --user_info_file=${dir}users.tsv \
   --out_dir=${out_dir} \
   --binarize_true \
-  --model=pmf \
-  --fit_opt=alternating_updates \
-  --min_iterations=10 \
-  --seed=5532 \
+  --model=hpmf_categorywise \
+  --min_iterations=20 \
   --observed_topics_true \
   --stdout \

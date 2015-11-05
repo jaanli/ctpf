@@ -204,6 +204,15 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 else:
                     self._update_items(X, rows, cols, beta=beta,
                         categorywise=categorywise, update=update)
+            elif (type(beta) == np.ndarray and categorywise and
+                fit_opt == 'converge_out_category_first'):
+                # first update in-category components
+                if update == 'default':
+                    self._update_items(X, rows, cols, beta=beta,
+                        categorywise=categorywise, update='out_category')
+                else:
+                    self._update_items(X, rows, cols, beta=beta,
+                        categorywise=categorywise, update=update)
             else:
                 self._update_items(X, rows, cols)
             pred_ll = self.pred_loglikeli(**vad)
@@ -216,7 +225,16 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 self.logger.info(string)
             if improvement < self.tol and i > self.min_iter:
                 if update == 'default' and fit_opt != 'default':
-                    if fit_opt ==
+                    if fit_opt == 'converge_in_category_first':
+                        # we converged in-category. now converge out_category
+                        self._update(X, rows, cols, vad, beta=beta,
+                            categorywise=categorywise, fit_opt=fit_opt,
+                            update='out_category')
+                    if fit_opt == 'converge_out_category_first':
+                        # we converged out-category. now converge in_category
+                        self._update(X, rows, cols, vad, beta=beta,
+                            categorywise=categorywise, fit_opt=fit_opt,
+                            update='in_category')
                 break
             old_pll = pred_ll
         pass
