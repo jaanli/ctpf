@@ -131,7 +131,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
     def fit(self, X, rows, cols, vad,
-        beta=False, theta=False, categorywise=False):
+        beta=False, theta=False, categorywise=False, fit_opt='default'):
         '''Fit the model to the data in X.
 
         Parameters
@@ -147,7 +147,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         n_items, n_users = X.shape
         self._init_items(n_items, beta=beta, categorywise=categorywise)
         self._init_users(n_users, theta=theta)
-        self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise)
+        self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise,
+            fit_opt=fit_opt)
         return self
 
     #def transform(self, X, attr=None):
@@ -179,7 +180,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     #    self._update(X, update_beta=False)
     #    return getattr(self, attr)
 
-    def _update(self, X, rows, cols, vad, beta=False, categorywise=False):
+    def _update(self, X, rows, cols, vad, beta=False, categorywise=False,
+        fit_opt='default', update='default'):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
@@ -187,9 +189,21 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             if type(beta) == np.ndarray and not categorywise:
                 # do nothing if we have observed betas.
                 pass
-            elif type(beta) == np.ndarray and categorywise:
+            elif (type(beta) == np.ndarray and categorywise and
+                fit_opt == 'alternating_updates'):
+                # alternate between updating in-category and out-category components of items
                 self._update_items(X, rows, cols, beta=beta,
-                    categorywise=categorywise, iteration=i)
+                    categorywise=categorywise, iteration=i,
+                    update='alternating')
+            elif (type(beta) == np.ndarray and categorywise and
+                fit_opt == 'converge_in_category_first'):
+                # first update in-category components
+                if update == 'default':
+                    self._update_items(X, rows, cols, beta=beta,
+                        categorywise=categorywise, update='in_category')
+                else:
+                    self._update_items(X, rows, cols, beta=beta,
+                        categorywise=categorywise, update=update)
             else:
                 self._update_items(X, rows, cols)
             pred_ll = self.pred_loglikeli(**vad)
@@ -200,8 +214,9 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             if self.verbose:
                 string = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t Improvement: %.5f' % (i, pred_ll, old_pll, improvement)
                 self.logger.info(string)
-            print self.min_iter
             if improvement < self.tol and i > self.min_iter:
+                if update == 'default' and fit_opt != 'default':
+                    if fit_opt ==
                 break
             old_pll = pred_ll
         pass

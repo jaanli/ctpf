@@ -77,10 +77,20 @@ parser.add_argument('--model',
   type=str,
   help='what model / algo to use')
 
+parser.add_argument('--fit_opt',
+  type=str,
+  default='default',
+  help='how to fit the model, fit options')
+
 parser.add_argument('--tolerance',
   type=float,
   default=0.0001,
   help='tolerance for fit')
+
+parser.add_argument('--seed',
+  type=int,
+  default=98765,
+  help='seed')
 
 parser.add_argument('--min_iterations',
   type=int,
@@ -114,7 +124,9 @@ id2arxiv_info = pd.read_csv(args.item_info_file, header=None, delimiter='\t', na
 unique_did = list(id2arxiv_info.index)
 n_docs = np.unique(unique_did).shape[0]
 
-if args.observed_topics:
+if (args.observed_topics or
+    args.model == 'pmf_categorywise' or
+    args.model == 'hpmf_categorywise'):
   document_category_dummies = id2arxiv_info['categories'].str.join(sep='').str.get_dummies(sep=' ')
   category_list = list(document_category_dummies.columns)
   n_categories = len(category_list)
@@ -156,7 +168,7 @@ logger.info('=>running fit')
 h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'w')
 
 if args.model == 'pmf' or args.model == 'pmf_categorywise':
-  coder = pmf.PoissonMF(n_components=n_categories, random_state=98765,
+  coder = pmf.PoissonMF(n_components=n_categories, random_state=args.seed,
     verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger, tol=args.tolerance,
     min_iter=args.min_iterations)
   if args.resume:
@@ -167,7 +179,7 @@ if args.model == 'pmf' or args.model == 'pmf_categorywise':
     if args.observed_topics:
       if args.model == 'pmf_categorywise':
         coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-          categorywise=True)
+          categorywise=True, fit_opt=args.fit_opt)
       else:
         coder.fit(train_data, rows, cols, validation, beta=observed_categories)
     else:
@@ -225,7 +237,7 @@ elif args.model == 'hpmf' or args.model == 'hpmf_categorywise':
     if args.observed_topics:
       if args.model == 'hpmf_categorywise':
         coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-          categorywise=True)
+          categorywise=True, fit_opt=args.fit_opt)
       else:
         coder.fit(train_data, rows, cols, validation, beta=observed_categories)
     else:
