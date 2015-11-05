@@ -146,7 +146,7 @@ logger.info('=>running fit')
 
 h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'w')
 
-if args.model == 'pmf':
+if args.model == 'pmf' or args.model == 'pmf_categorywise':
   coder = pmf.PoissonMF(n_components=n_categories, random_state=98765,
     verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
   if args.resume:
@@ -155,7 +155,11 @@ if args.model == 'pmf':
     logging.info('loaded fit!')
   else:
     if args.observed_topics:
-      coder.fit(train_data, rows, cols, validation, beta=observed_categories)
+      if args.model == 'pmf_categorywise':
+        coder.fit(train_data, rows, cols, validation, beta=observed_categories,
+          categorywise=True)
+      else:
+        coder.fit(train_data, rows, cols, validation, beta=observed_categories)
     else:
       coder.fit(train_data, rows, cols, validation)
 

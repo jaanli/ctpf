@@ -85,8 +85,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.c = float(kwargs.get('c', 0.1))
         self.d = float(kwargs.get('d', 0.1))
 
-    def _init_users(self, n_users, theta=False, beta=False):
-        if type(beta) == np.ndarray:
+    def _init_users(self, n_users, theta=False):
+        if type(theta) == np.ndarray:
             self.logger.info('initializing theta to be the observed one')
             self.Et = theta
             self.Elogt = None
@@ -104,9 +104,9 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                                 ).astype(np.float32)
             self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
-    def _init_items(self, n_items, beta=False):
+    def _init_items(self, n_items, beta=False, categorywise=False):
         # if we pass in observed betas:
-        if type(beta) == np.ndarray:
+        if type(beta) == np.ndarray and not categorywise:
             self.logger.info('initializing beta to be the observed one')
             self.Eb = beta
             self.Elogb = None
@@ -125,7 +125,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                                 ).astype(np.float32)
             self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
-    def fit(self, X, rows, cols, vad, beta=False, theta=False):
+    def fit(self, X, rows, cols, vad,
+        beta=False, theta=False, categorywise=False):
         '''Fit the model to the data in X.
 
         Parameters
@@ -139,9 +140,9 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             Returns the instance itself.
         '''
         n_items, n_users = X.shape
-        self._init_items(n_items, beta=beta)
+        self._init_items(n_items, beta=beta, categorywise=categorywise)
         self._init_users(n_users, theta=theta)
-        self._update(X, rows, cols, vad, beta=beta)
+        self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise)
         return self
 
     #def transform(self, X, attr=None):
@@ -173,14 +174,17 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     #    self._update(X, update_beta=False)
     #    return getattr(self, attr)
 
-    def _update(self, X, rows, cols, vad, beta=False):
+    def _update(self, X, rows, cols, vad, beta=False, categorywise=False):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
             self._update_users(X, rows, cols, beta=beta)
-            if type(beta) == np.ndarray:
+            if type(beta) == np.ndarray and not categorywise:
                 # do nothing if we have observed betas.
                 pass
+            elif type(beta) == np.ndarray and categorywise:
+                self._update_items(X, rows, cols, beta=beta,
+                    categorywise=categorywise, iteration=i)
             else:
                 self._update_items(X, rows, cols)
             pred_ll = self.pred_loglikeli(**vad)
@@ -239,13 +243,33 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.rho_t = self.b + np.sum(self.Eb, axis=0, keepdims=True).T
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
-    def _update_items(self, X, rows, cols):
+    def _update_items(self, X, rows, cols, beta=False, categorywise=False,
+        iteration=None):
         ratio = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
                                    (rows, cols)),
                                   dtype=np.float32, shape=X.shape)
-        self.gamma_b = self.c + np.exp(self.Elogb) * \
-            ratio.dot(np.exp(self.Elogt.T))
-        self.rho_b = self.d + np.sum(self.Et, axis=1)
+        if type(beta) == np.ndarray and categorywise:
+            beta_bool = beta.astype(bool)
+            gamma_b_updated = self.c + np.exp(self.Elogb) * \
+                ratio.dot(np.exp(self.Elogt.T))
+            rho_b_updated = self.d + np.sum(self.Et, axis=1)
+            rho_b_updated_reshaped = np.reshape(np.repeat(rho_b_updated,
+                self.rho_b.shape[0], axis=0), self.rho_b.shape)
+            if iteration % 2 == 0:
+                self.logger.info('updating *only* in-category parameters')
+                self.gamma_b[beta_bool] = gamma_b_updated[beta_bool]
+                self.rho_b[beta_bool] = rho_b_updated_reshaped[beta_bool]
+            else:
+                beta_bool_not = np.logical_not(beta_bool)
+                self.logger.info('updating *only* out-category parameters')
+                self.gamma_b[beta_bool_not] = gamma_b_updated[beta_bool_not]
+                self.rho_b[beta_bool_not] = \
+                    rho_b_updated_reshaped[beta_bool_not]
+        else:
+            self.gamma_b = self.c + np.exp(self.Elogb) * \
+                ratio.dot(np.exp(self.Elogt.T))
+            self.rho_b = self.d + np.sum(self.Et, axis=1)
+            print self.rho_b.shape
         self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
     def _xexplog(self, rows, cols, beta=False):
