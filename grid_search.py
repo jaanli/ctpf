@@ -29,7 +29,7 @@ parameters = dict(model = ['pmf', 'hpmf'],
   test_file = [test_file],
   item_info_file = [item_info_file],
   user_info_file = [user_info_file],
-  min_iterations = [10],
+  min_iterations = ['10'],
   stdout = ['stdout'],
   #resume = ['resume']
   )
@@ -40,7 +40,7 @@ base_dir_name = out_dir + '{}-{}-{}'.format(now[0], now[1], now[2])
 
 for setting in dict_product(parameters):
 
-  out_dir_path = '{}-{}-{}-{}-{}-{}/'.format(base_dir_name,
+  out_dir_path = '{}-{}-{}-{}-{}/'.format(base_dir_name,
     setting['model'],
     setting['categorywise'],
     setting['fit_type'],
@@ -57,6 +57,8 @@ for setting in dict_product(parameters):
       setting_list += [v]
     else:
       setting_list += ['--' + v]
+
+  print setting_list
 
   subprocess.Popen(['python', 'job_handler.py'] + setting_list)
 
