@@ -14,9 +14,9 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 class PoissonMF(BaseEstimator, TransformerMixin):
     ''' Poisson matrix factorization with batch inference '''
-    def __init__(self, n_components=100, max_iter=100, tol=0.0001,
+    def __init__(self, n_components=100, max_iter=100, min_iter=1, tol=0.0001,
                  smoothness=100, random_state=None, verbose=False,
-                 **kwargs):
+                 items_init_scale=1, **kwargs):
         ''' Poisson matrix factorization
 
         Arguments
@@ -26,6 +26,9 @@ class PoissonMF(BaseEstimator, TransformerMixin):
 
         max_iter : int
             Maximal number of iterations to perform
+
+        min_iter : int
+            Minimum number of iterations to perform before checking for tolerance
 
         tol : float
             The threshold on the increase of the objective to stop the
@@ -47,8 +50,10 @@ class PoissonMF(BaseEstimator, TransformerMixin):
 
         self.n_components = n_components
         self.max_iter = max_iter
+        self.min_iter = min_iter
         self.tol = tol
         self.smoothness = smoothness
+        self.items_init_scale = items_init_scale
         self.random_state = random_state
         self.verbose = verbose
 
@@ -115,11 +120,11 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         else: # proceed normally
             self.logger.info('initializing normal variational params')
             # variational parameters for beta
-            self.gamma_b = self.smoothness * \
+            self.gamma_b = self.items_init_scale * self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(n_items, self.n_components)
                                 ).astype(np.float32)
-            self.rho_b = self.smoothness * \
+            self.rho_b = self.items_init_scale * self.smoothness * \
                 np.random.gamma(self.smoothness, 1. / self.smoothness,
                                 size=(n_items, self.n_components)
                                 ).astype(np.float32)
@@ -195,7 +200,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             if self.verbose:
                 string = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t Improvement: %.5f' % (i, pred_ll, old_pll, improvement)
                 self.logger.info(string)
-            if improvement < self.tol:
+            print self.min_iter
+            if improvement < self.tol and i > self.min_iter:
                 break
             old_pll = pred_ll
         pass

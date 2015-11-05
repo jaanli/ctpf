@@ -9,10 +9,9 @@ import rec_eval
 import pandas as pd
 import numpy as np
 import scipy
-import pmf
+import pmf, hpmf, uaspmf
 import logging
 import util
-import uaspmf
 import h5py
 import os
 
@@ -77,6 +76,16 @@ parser.add_argument('--resume',
 parser.add_argument('--model',
   type=str,
   help='what model / algo to use')
+
+parser.add_argument('--tolerance',
+  type=float,
+  default=0.0001,
+  help='tolerance for fit')
+
+parser.add_argument('--min_iterations',
+  type=int,
+  default=1,
+  help='minimum number of iterations')
 
 args = parser.parse_args()
 
@@ -148,7 +157,8 @@ h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'w')
 
 if args.model == 'pmf' or args.model == 'pmf_categorywise':
   coder = pmf.PoissonMF(n_components=n_categories, random_state=98765,
-    verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
+    verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger, tol=args.tolerance,
+    min_iter=args.min_iterations)
   if args.resume:
     Eb_t = h5f['Eb_t'][:]
     Et_t = h5f['Et_t'][:]
@@ -203,13 +213,28 @@ elif args.model == 'ctpf':
     h5f.create_dataset('Eba_t', data=Eba_t)
     h5f.create_dataset('Ebs_t', data=Ebs_t)
 
-elif args.model == 'pmf_categorywise':
-  pass
+elif args.model == 'hpmf' or args.model == 'hpmf_categorywise':
+  coder = hpmf.HPoissonMF(n_components=n_categories, max_iter=500,
+    random_state=98765, verbose=True,
+    a=0.3, c=0.3, a_ksi=0.3, b_ksi=0.3, c_eta=0.3, d_eta=0.3)
+  if args.resume:
+    Eb_t = h5f['Eb_t'][:]
+    Et_t = h5f['Et_t'][:]
+    logging.info('loaded fit!')
+  else:
+    if args.observed_topics:
+      if args.model == 'hpmf_categorywise':
+        coder.fit(train_data, rows, cols, validation, beta=observed_categories,
+          categorywise=True)
+      else:
+        coder.fit(train_data, rows, cols, validation, beta=observed_categories)
+    else:
+      coder.fit(train_data, rows, cols, validation)
 
-elif args.model == 'hier_ctpf':
-  #todo
-  pass
-
+    Et_t = np.ascontiguousarray(coder.Et.T)
+    Eb_t = np.ascontiguousarray(coder.Eb.T)
+    h5f.create_dataset('Eb_t', data=Eb_t)
+    h5f.create_dataset('Et_t', data=Et_t)
 h5f.close()
 
 if not args.resume:

@@ -9,6 +9,7 @@ CREATED: 2014-11-17 16:06:50 by Dawen Liang <dliang@ee.columbia.edu>
 import sys
 import numpy as np
 from scipy import sparse, special, weave
+import logging
 
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -44,6 +45,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         **kwargs: dict
             Model hyperparameters
         '''
+        self.logger = logging.getLogger(__name__)
 
         self.n_components = n_components
         self.max_iter = max_iter
@@ -124,7 +126,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         n_items, n_users = X.shape
         self._init_items(n_items)
         self._init_users(n_users)
-        self._update(X, rows, cols, vad)
+        self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise)
         return self
 
     #def transform(self, X, attr=None):
@@ -156,16 +158,17 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
     #    self._update(X, update_beta=False)
     #    return getattr(self, attr)
 
-    def _update(self, X, rows, cols, vad):
+    def _update(self, X, rows, cols, vad, beta=False, categorywise=False):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
             self._update_users(X, rows, cols)
-            self._update_items(X, rows, cols)
+            self._update_items(X, rows, cols, beta=beta,
+                    categorywise=categorywise, iteration=i)
             pred_ll = self.pred_loglikeli(**vad)
             improvement = (pred_ll - old_pll) / abs(old_pll)
             if self.verbose:
-                print('ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t'
+                self.logger.info('ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t'
                       'Improvement: %.5f' % (i, pred_ll, old_pll, improvement))
                 sys.stdout.flush()
             if improvement < self.tol and i > 10:
@@ -187,16 +190,34 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         self.rho_ksi = self.b_ksi + np.sum(self.Et, axis=0)
         self.Eksi, _ = _compute_expectations(self.gamma_ksi, self.rho_ksi)
 
-    def _update_items(self, X, rows, cols):
+    def _update_items(self, X, rows, cols, beta=False, categorywise=False,
+        iteration=None):
         ratio = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
                                    (rows, cols)),
                                   dtype=np.float32, shape=X.shape)
-        self.gamma_b = self.c + np.exp(self.Elogb) * \
-            ratio.dot(np.exp(self.Elogt.T))
-        self.rho_b = self.Eeta + np.sum(self.Et, axis=1)
-        self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
+        if type(beta) == np.ndarray and categorywise:
+            beta_bool = beta.astype(bool)
+            gamma_b_updated = self.c + np.exp(self.Elogb) * \
+                ratio.dot(np.exp(self.Elogt.T))
+            rho_b_updated = self.Eeta + np.sum(self.Et, axis=1)
+            if iteration % 2 == 0:
+                self.logger.info('updating *only* in-category parameters')
+                self.gamma_b[beta_bool] = gamma_b_updated[beta_bool]
+                self.rho_b[beta_bool] = rho_b_updated[beta_bool]
+            else:
+                beta_bool_not = np.logical_not(beta_bool)
+                self.logger.info('updating *only* out-category parameters')
+                self.gamma_b[beta_bool_not] = gamma_b_updated[beta_bool_not]
+                self.rho_b[beta_bool_not] = \
+                    rho_b_updated[beta_bool_not]
+            self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
+        else:
+            self.gamma_b = self.c + np.exp(self.Elogb) * \
+                ratio.dot(np.exp(self.Elogt.T))
+            self.rho_b = self.Eeta + np.sum(self.Et, axis=1)
+            self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
-        # update item popularity hyperprior
+        # update item popularity hyperprior, regardless
         self.gamma_eta = self.c_eta + self.n_components * self.c
         self.rho_eta = self.d_eta + np.sum(self.Eb, axis=1, keepdims=True)
         self.Eeta, _ = _compute_expectations(self.gamma_eta, self.rho_eta)
