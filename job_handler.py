@@ -123,7 +123,10 @@ args = parser.parse_args()
 
 # validate arguments
 if args.categorywise and args.fit_type == 'default':
-    raise Exception('need to specify fit_type for categorywise!')
+  raise Exception('need to specify fit_type for categorywise!')
+
+if args.fit_type == 'alternating_updates' and args.zero_untrained_components:
+  raise Exception('cannot zero_untrained_components with alternating_updates!')
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -260,7 +263,8 @@ elif args.model == 'hpmf':
   else:
     if args.observed_topics:
       coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-        categorywise=args.categorywise, fit_type=args.fit_type)
+        categorywise=args.categorywise, fit_type=args.fit_type,
+        zero_untrained_components=args.zero_untrained_components)
     else:
       coder.fit(train_data, rows, cols, validation)
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 # this script is for debugging and quick runs
-# dir=/home/statler/lcharlin/arxiv/dat/dataset_toy/
+dir=/home/statler/lcharlin/arxiv/dat/dataset_toy/
 out_dir=/home/waldorf/altosaar/projects/arxiv/fit/ctpf-debug/
 
-dir=/home/statler/lcharlin/arxiv/dat/dataset_2003-2012_clean/
+# dir=/home/statler/lcharlin/arxiv/dat/dataset_2003-2012_clean/
 # out_dir=/home/waldorf/altosaar/projects/arxiv/fit/hpmf-categorywise/
 # out_dir=/home/waldorf/altosaar/projects/arxiv/fit/ctpf-stagewise-heldout/
 
@@ -15,10 +15,10 @@ python job_handler.py \
   --user_info_file=${dir}users.tsv \
   --out_dir=${out_dir} \
   --binarize_true \
-  --model=pmf \
+  --model=hpmf \
   --categorywise_true \
-  --fit_type=converge_in_category_first \
-  --zero_untrained_components_true \
+  --fit_type=converge_out_category_first \
+  --zero_untrained_components_false \
   --min_iterations=10 \
   --observed_topics_true \
   --stdout \

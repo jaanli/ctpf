@@ -111,7 +111,8 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         self.Eeta, _ = _compute_expectations(self.gamma_eta, self.rho_eta)
 
     def fit(self, X, rows, cols, vad,
-        beta=False, theta=False, categorywise=False, fit_type='default'):
+        beta=False, theta=False, categorywise=False, fit_type='default',
+        zero_untrained_components=False):
         '''Fit the model to the data in X.
 
         Parameters
@@ -127,7 +128,9 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         n_items, n_users = X.shape
         self._init_items(n_items)
         self._init_users(n_users)
-        self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise)
+        self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise,
+            fit_type=fit_type,
+            zero_untrained_components=zero_untrained_components)
         return self
 
     #def transform(self, X, attr=None):
@@ -159,20 +162,95 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
     #    self._update(X, update_beta=False)
     #    return getattr(self, attr)
 
-    def _update(self, X, rows, cols, vad, beta=False, categorywise=False):
+    def _update(self, X, rows, cols, vad, beta=False, categorywise=False,
+        fit_type='default', update='default', zero_untrained_components=False):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
             self._update_users(X, rows, cols)
-            self._update_items(X, rows, cols, beta=beta,
-                    categorywise=categorywise, iteration=i)
+            if type(beta) == np.ndarray and not categorywise:
+                pass
+            elif fit_type != 'default':
+                if zero_untrained_components and i == 1 and update == 'default':
+                    # store the initial values somewhere, then zero them out,
+                    # then load them back in once they've been fit
+                    beta_bool = beta.astype(bool)
+                    beta_bool_not = np.logical_not(beta_bool)
+                    small_num = 1e-5
+                    if fit_type == 'converge_in_category_first':
+                        # zero out out_category components
+                        gamma_b_out_category = self.gamma_b[beta_bool_not]
+                        rho_b_out_category = self.rho_b[beta_bool_not]
+                        self.gamma_b[beta_bool_not] = small_num
+                        self.rho_b[beta_bool_not] = small_num
+                    elif fit_type == 'converge_out_category_first':
+                        # zero out in_category components
+                        gamma_b_in_category = self.gamma_b[beta_bool]
+                        rho_b_in_category = self.rho_b[beta_bool]
+                        self.gamma_b[beta_bool] = small_num
+                        self.rho_b[beta_bool] = small_num
+                if (type(beta) == np.ndarray and categorywise and
+                    fit_type == 'alternating_updates'):
+                    # alternate between updating in-category and out-category components of items
+                    if i % 2 == 0:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, iteration=i,
+                            update='in_category')
+                    else:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, iteration=i,
+                            update='out_category')
+                elif (type(beta) == np.ndarray and categorywise and
+                    fit_type == 'converge_in_category_first'):
+                    # first update in-category components
+                    if update == 'default':
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update='in_category')
+                    else:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update=update)
+                elif (type(beta) == np.ndarray and categorywise and
+                    fit_type == 'converge_out_category_first'):
+                    # first update out-category components
+                    if update == 'default':
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update='out_category')
+                    else:
+                        self._update_items(X, rows, cols, beta=beta,
+                            categorywise=categorywise, update=update)
+            else:
+                self._update_items(X, rows, cols)
             pred_ll = self.pred_loglikeli(**vad)
+            if np.isnan(pred_ll):
+                self.logger.error('got nan in predictive ll')
+                raise Exception('nan in predictive ll')
             improvement = (pred_ll - old_pll) / abs(old_pll)
             if self.verbose:
                 self.logger.info('ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t'
                       'Improvement: %.5f' % (i, pred_ll, old_pll, improvement))
                 sys.stdout.flush()
             if improvement < self.tol and i > self.min_iter:
+                if update == 'default' and fit_type != 'default':
+                    if fit_type == 'converge_in_category_first':
+                        # we converged in-category. now converge out_category
+                        if zero_untrained_components:
+                            self.logger.info(
+                                're-load initial values for out_category')
+                            self.gamma_b[beta_bool_not] = gamma_b_out_category
+                            self.rho_b[beta_bool_not] = rho_b_out_category
+                        self._update(X, rows, cols, vad, beta=beta,
+                            categorywise=categorywise, fit_type=fit_type,
+                            update='out_category')
+                    if fit_type == 'converge_out_category_first':
+                        # we converged out-category. now converge in_category
+                        if zero_untrained_components:
+                            self.logger.info(
+                                're-load initial values for in_category')
+                            self.gamma_b[beta_bool] = gamma_b_in_category
+                            self.rho_b[beta_bool] = rho_b_in_category
+                        self._update(X, rows, cols, vad, beta=beta,
+                            categorywise=categorywise, fit_type=fit_type,
+                            update='in_category')
                 break
             old_pll = pred_ll
         pass
@@ -192,7 +270,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         self.Eksi, _ = _compute_expectations(self.gamma_ksi, self.rho_ksi)
 
     def _update_items(self, X, rows, cols, beta=False, categorywise=False,
-        iteration=None):
+        update='default', iteration=None):
         ratio = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
                                    (rows, cols)),
                                   dtype=np.float32, shape=X.shape)
@@ -201,11 +279,11 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
             gamma_b_updated = self.c + np.exp(self.Elogb) * \
                 ratio.dot(np.exp(self.Elogt.T))
             rho_b_updated = self.Eeta + np.sum(self.Et, axis=1)
-            if iteration % 2 == 0:
+            if update == 'in_category':
                 self.logger.info('updating *only* in-category parameters')
                 self.gamma_b[beta_bool] = gamma_b_updated[beta_bool]
                 self.rho_b[beta_bool] = rho_b_updated[beta_bool]
-            else:
+            elif update == 'out_category':
                 beta_bool_not = np.logical_not(beta_bool)
                 self.logger.info('updating *only* out-category parameters')
                 self.gamma_b[beta_bool_not] = gamma_b_updated[beta_bool_not]
