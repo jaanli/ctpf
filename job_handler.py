@@ -144,7 +144,7 @@ test = dict(X_new=test_smat.data,
 
 logger.info('=>running fit')
 
-h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'a')
+h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'w')
 
 if args.model == 'pmf':
   coder = pmf.PoissonMF(n_components=n_categories, random_state=98765,
@@ -199,8 +199,7 @@ elif args.model == 'ctpf':
     h5f.create_dataset('Eba_t', data=Eba_t)
     h5f.create_dataset('Ebs_t', data=Ebs_t)
 
-elif args.model == 'categorywise':
-  #todo
+elif args.model == 'pmf_categorywise':
   pass
 
 elif args.model == 'hier_ctpf':

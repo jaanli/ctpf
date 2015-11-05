@@ -12,6 +12,6 @@ python job_handler.py \
   --user_info_file=${dir}users.tsv \
   --out_dir=${out_dir} \
   --binarize_true \
-  --model=pmf \
+  --model=pmf_categorywise \
   --observed_topics_false \
- # --debug
+  --stdout \
