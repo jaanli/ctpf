@@ -64,6 +64,15 @@ parser.add_argument('--binarize_false',
   action='store_false',
   help='do not binarize')
 
+parser.add_argument('--stdout',
+  dest='stdout',
+  action='store_true',
+  help='print to stdout')
+
+parser.add_argument('--resume',
+  dest='resume',
+  action='store_true',
+  help='resume and load')
 
 parser.add_argument('--model',
   type=str,
@@ -85,7 +94,8 @@ fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 # add the handlers to the logger
 logger.addHandler(fh)
-logger.addHandler(ch)
+if args.stdout:
+  logger.addHandler(ch)
 
 for arg, value in sorted(vars(args).items()):
   logger.info("{}: {}".format(arg, value))
@@ -134,49 +144,60 @@ test = dict(X_new=test_smat.data,
 
 logger.info('=>running fit')
 
-h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'w')
+h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'a')
 
 if args.model == 'pmf':
   coder = pmf.PoissonMF(n_components=n_categories, random_state=98765,
     verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
-  if args.observed_topics:
-    coder.fit(train_data, rows, cols, validation, beta=observed_categories)
+  if args.resume:
+    Eb_t = h5f['Eb_t'][:]
+    Et_t = h5f['Et_t'][:]
+    logging.info('loaded fit!')
   else:
-    coder.fit(train_data, rows, cols, validation)
+    if args.observed_topics:
+      coder.fit(train_data, rows, cols, validation, beta=observed_categories)
+    else:
+      coder.fit(train_data, rows, cols, validation)
 
-  Et_t = np.ascontiguousarray(coder.Et.T)
-  Eb_t = np.ascontiguousarray(coder.Eb.T)
-  h5f.create_dataset('Eb_t', data=Eb_t)
-  h5f.create_dataset('Et_t', data=Et_t)
+    Et_t = np.ascontiguousarray(coder.Et.T)
+    Eb_t = np.ascontiguousarray(coder.Eb.T)
+    h5f.create_dataset('Eb_t', data=Eb_t)
+    h5f.create_dataset('Et_t', data=Et_t)
 
 elif args.model == 'ctpf':
   song2artist = np.array([n for n in range(n_docs)])
   coder = uaspmf.PoissonMF(n_components=n_categories, smoothness=100,
       max_iter=100, random_state=98765, verbose=True,
       a=0.3, b=0.3, c=0.3, d=0.3, f=0.3, g=0.3, s2a=song2artist)
-
-  if args.observed_topics:
-    # run vanilla PF to get user prefs first
-    coder_pmf = pmf.PoissonMF(n_components=n_categories, random_state=98765,
-      verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
-    coder_pmf.fit(train_data, rows, cols, validation, beta=observed_categories)
-
-    # calc log-likelihood of this
-    util.calculate_loglikelihood(coder_pmf, train, validation, test)
-
-    # fit ctpf with fixed user prefs and observed topics
-    coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-      theta=coder_pmf.Et)
+  if args.resume:
+    Eba_t = h5f['Eba_t'][:]
+    Ebs_t = h5f['Ebs_t'][:]
+    Et_t = h5f['Et_t'][:]
+    Eb_t = Ebs_t + Eba_t
+    logging.info('loaded fit!')
   else:
-    coder.fit(train_data, rows, cols, validation)
+    if args.observed_topics:
+      # run vanilla PF to get user prefs first
+      coder_pmf = pmf.PoissonMF(n_components=n_categories, random_state=98765,
+        verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
+      coder_pmf.fit(train_data, rows, cols, validation, beta=observed_categories)
 
-  Et_t = np.ascontiguousarray(coder.Et.T)
-  Eba_t = np.ascontiguousarray(coder.Eba.T)
-  Ebs_t = np.ascontiguousarray(coder.Ebs.T)
-  Eb_t = Ebs_t + np.ascontiguousarray(coder.Eba[song2artist].T)
-  h5f.create_dataset('Et_t', data=Et_t)
-  h5f.create_dataset('Eba_t', data=Eba_t)
-  h5f.create_dataset('Ebs_t', data=Ebs_t)
+      # calc log-likelihood of this
+      util.calculate_loglikelihood(coder_pmf, train, validation, test)
+
+      # fit ctpf with fixed user prefs and observed topics
+      coder.fit(train_data, rows, cols, validation, beta=observed_categories,
+        theta=coder_pmf.Et)
+    else:
+      coder.fit(train_data, rows, cols, validation)
+
+    Et_t = np.ascontiguousarray(coder.Et.T)
+    Eba_t = np.ascontiguousarray(coder.Eba.T)
+    Ebs_t = np.ascontiguousarray(coder.Ebs.T)
+    Eb_t = Ebs_t + np.ascontiguousarray(coder.Eba[song2artist].T)
+    h5f.create_dataset('Et_t', data=Et_t)
+    h5f.create_dataset('Eba_t', data=Eba_t)
+    h5f.create_dataset('Ebs_t', data=Ebs_t)
 
 elif args.model == 'categorywise':
   #todo
@@ -188,8 +209,9 @@ elif args.model == 'hier_ctpf':
 
 h5f.close()
 
-util.calculate_loglikelihood(coder, train, validation, test)
+if not args.resume:
+  util.calculate_loglikelihood(coder, train, validation, test)
 
-#rec_eval.calc_all(train_data, validation_smat, test_smat, Et_t, Eb_t)
+rec_eval.calc_all(train_data, validation_smat, test_smat, Et_t, Eb_t)
 
 

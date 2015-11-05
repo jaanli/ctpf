@@ -3,8 +3,10 @@
 import subprocess
 from itertools import product, izip
 import os, time
+import logging
 
-in_dir = '/home/statler/lcharlin/arxiv/dat/dataset_toy/'
+#in_dir = '/home/statler/lcharlin/arxiv/dat/dataset_toy/'
+in_dir = '/home/statler/lcharlin/arxiv/dat/dataset_2003-2012_clean/'
 out_dir = '/home/waldorf/altosaar/projects/arxiv/fit/'
 
 def dict_product(dicts):
@@ -23,7 +25,9 @@ parameters = dict(model = ['pmf', 'ctpf'],
   validation_file = [validation_file],
   test_file = [test_file],
   item_info_file = [item_info_file],
-  user_info_file = [user_info_file]
+  user_info_file = [user_info_file],
+  stdout = ['stdout'],
+  #resume = ['resume']
   )
 
 # create timestamped directory in fit
@@ -32,10 +36,20 @@ base_dir_name = out_dir + '{}-{}-{}'.format(now[0], now[1], now[2])
 
 for setting in dict_product(parameters):
 
-  out_dir_path = '{}_{}_{}_{}'.format(base_dir_name, setting['model'], setting['binarize'], setting['observed_topics'])
+  out_dir_path = '{}-{}-{}-{}/'.format(base_dir_name, setting['model'], setting['binarize'], setting['observed_topics'])
   if not os.path.exists(out_dir_path):
     os.makedirs(out_dir_path)
 
   setting['out_dir'] = out_dir_path
 
-  subprocess.call(['./run.sh'] + list(setting))
+  setting_list = []
+  for k, v in setting.items():
+    if k not in ['binarize', 'observed_topics', 'stdout', 'resume']:
+      setting_list += ['--' + k]
+      setting_list += [v]
+    else:
+      setting_list += ['--' + v]
+
+  subprocess.Popen(['python', 'job_handler.py'] + setting_list)
+
+  print 'launched job & created directory {}'.format(out_dir_path)

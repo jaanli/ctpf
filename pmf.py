@@ -184,6 +184,9 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             else:
                 self._update_items(X, rows, cols)
             pred_ll = self.pred_loglikeli(**vad)
+            if np.isnan(pred_ll):
+                self.logger.error('got nan in predictive ll')
+                raise Exception('nan in predictive ll')
             improvement = (pred_ll - old_pll) / abs(old_pll)
             if self.verbose:
                 string = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\t Improvement: %.5f' % (i, pred_ll, old_pll, improvement)
