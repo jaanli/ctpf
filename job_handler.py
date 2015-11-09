@@ -153,9 +153,7 @@ id2arxiv_info = pd.read_csv(args.item_info_file, header=None, delimiter='\t', na
 unique_did = list(id2arxiv_info.index)
 n_docs = np.unique(unique_did).shape[0]
 
-if (args.observed_topics or
-    args.model == 'pmf_categorywise' or
-    args.model == 'hpmf_categorywise'):
+if args.observed_topics:
   document_category_dummies = id2arxiv_info['categories'].str.join(sep='').str.get_dummies(sep=' ')
   category_list = list(document_category_dummies.columns)
   n_categories = len(category_list)
@@ -219,9 +217,11 @@ if args.model == 'pmf':
 
 elif args.model == 'ctpf':
   song2artist = np.array([n for n in range(n_docs)])
+  # first fit vanilla poisson factorization for user preferences
   coder = uaspmf.PoissonMF(n_components=n_categories, smoothness=100,
       max_iter=100, random_state=98765, verbose=True,
-      a=0.3, b=0.3, c=0.3, d=0.3, f=0.3, g=0.3, s2a=song2artist)
+      a=0.3, b=0.3, c=0.3, d=0.3, f=0.3, g=0.3, s2a=song2artist,
+      min_iter=args.min_iterations)
   if args.resume:
     Eba_t = h5f['Eba_t'][:]
     Ebs_t = h5f['Ebs_t'][:]
@@ -239,9 +239,15 @@ elif args.model == 'ctpf':
       util.calculate_loglikelihood(coder_pmf, train, validation, test)
 
       # fit ctpf with fixed user prefs and observed topics
+      # fit_type = 'default': just fit epsilons normally.
+      # fit_type = alternating: update in_category components, then out_category components.
+      # fit_type = converge_in_category_components first:
       coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-        theta=coder_pmf.Et)
+        theta=coder_pmf.Et, categorywise=args.categorywise,
+        fit_type=args.fit_type,
+        zero_untrained_components=args.zero_untrained_components)
     else:
+      # just run vanilla ctpf
       coder.fit(train_data, rows, cols, validation)
 
     Et_t = np.ascontiguousarray(coder.Et.T)

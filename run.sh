@@ -16,9 +16,9 @@ python job_handler.py \
   --out_dir=${out_dir} \
   --binarize_true \
   --model=hpmf \
-  --categorywise_true \
-  --fit_type=converge_out_category_first \
+  --categorywise_false \
+  --fit_type=default \
   --zero_untrained_components_false \
-  --min_iterations=10 \
+  --min_iterations=5 \
   --observed_topics_true \
   --stdout \

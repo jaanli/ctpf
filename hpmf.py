@@ -90,25 +90,37 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
                             size=n_users).astype(np.float32)
         self.Eksi, _ = _compute_expectations(self.gamma_ksi, self.rho_ksi)
 
-    def _init_items(self, n_items):
-        # variational parameters for item factor beta
-        self.gamma_b = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(n_items, self.n_components)
-                            ).astype(np.float32)
-        self.rho_b = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(n_items, self.n_components)
-                            ).astype(np.float32)
-        self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
-        # variational parameters for item popularity
-        self.gamma_eta = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(n_items, 1)).astype(np.float32)
-        self.rho_eta = self.smoothness * \
-            np.random.gamma(self.smoothness, 1. / self.smoothness,
-                            size=(n_items, 1)).astype(np.float32)
-        self.Eeta, _ = _compute_expectations(self.gamma_eta, self.rho_eta)
+    def _init_items(self, n_items, beta=False):
+        # if observed cats:
+        if type(beta) == np.ndarray:
+            self.logger.info('initializing beta to be observed')
+            self.Eb = beta
+            self.Elogb = None
+            self.gamma_b = None
+            self.rho_b = None
+            self.Eeta = None
+            self.gamma_eta = None
+            self.rho_eta = None
+        else: #normal
+            # variational parameters for item factor beta
+            self.logger.info('initializing normal variational params')
+            self.gamma_b = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(n_items, self.n_components)
+                                ).astype(np.float32)
+            self.rho_b = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(n_items, self.n_components)
+                                ).astype(np.float32)
+            self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
+            # variational parameters for item popularity
+            self.gamma_eta = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(n_items, 1)).astype(np.float32)
+            self.rho_eta = self.smoothness * \
+                np.random.gamma(self.smoothness, 1. / self.smoothness,
+                                size=(n_items, 1)).astype(np.float32)
+            self.Eeta, _ = _compute_expectations(self.gamma_eta, self.rho_eta)
 
     def fit(self, X, rows, cols, vad,
         beta=False, theta=False, categorywise=False, fit_type='default',
@@ -126,7 +138,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
             Returns the instance itself.
         '''
         n_items, n_users = X.shape
-        self._init_items(n_items)
+        self._init_items(n_items, beta=beta)
         self._init_users(n_users)
         self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise,
             fit_type=fit_type,
@@ -167,7 +179,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
-            self._update_users(X, rows, cols)
+            self._update_users(X, rows, cols, beta=beta)
             if type(beta) == np.ndarray and not categorywise:
                 pass
             elif fit_type != 'default':
@@ -255,12 +267,18 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
             old_pll = pred_ll
         pass
 
-    def _update_users(self, X, rows, cols):
-        ratioT = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
+    def _update_users(self, X, rows, cols, beta=False, categorywise=False):
+        xexplog = self._xexplog(rows, cols, beta=beta)
+        ratioT = sparse.csr_matrix((X.data / xexplog,
                                     (rows, cols)),
                                    dtype=np.float32, shape=X.shape).transpose()
-        self.gamma_t = self.a + np.exp(self.Elogt) * \
-            ratioT.dot(np.exp(self.Elogb)).T
+        if type(beta) == np.ndarray and not categorywise:
+            self.gamma_t = self.a + np.exp(self.Elogt) * \
+                ratioT.dot(self.Eb).T
+        else:
+            self.gamma_t = self.a + np.exp(self.Elogt) * \
+                ratioT.dot(np.exp(self.Elogb)).T
+
         self.rho_t = self.Eksi + np.sum(self.Eb, axis=0, keepdims=True).T
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
@@ -301,11 +319,14 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         self.rho_eta = self.d_eta + np.sum(self.Eb, axis=1, keepdims=True)
         self.Eeta, _ = _compute_expectations(self.gamma_eta, self.rho_eta)
 
-    def _xexplog(self, rows, cols):
+    def _xexplog(self, rows, cols, beta=False):
         '''
         sum_k exp(E[log theta_{ik} * beta_{kd}])
         '''
-        data = _inner(np.exp(self.Elogb), np.exp(self.Elogt), rows, cols)
+        if type(beta) == np.ndarray:
+            data = _inner(self.Eb, np.exp(self.Elogt), rows, cols)
+        else:
+            data = _inner(np.exp(self.Elogb), np.exp(self.Elogt), rows, cols)
         return data
 
     def pred_loglikeli(self, X_new, rows_new, cols_new):
