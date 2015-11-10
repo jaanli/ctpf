@@ -309,6 +309,10 @@ elif args.model == 'hpmf':
 h5f.close()
 
 if not args.resume:
+  # print coder.Eb
+  # print '^eb'
+  # print coder.Et
+  # print '^et'
   util.calculate_loglikelihood(coder, train, validation, test)
 
 rec_eval.calc_all(train_data, validation_smat, test_smat, Et_t, Eb_t)

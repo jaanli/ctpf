@@ -20,7 +20,7 @@ python job_handler.py \
   --item_fit_type=alternating_updates \
   --user_fit_type=converge_separately \
   --zero_untrained_components_false \
-  --min_iterations=10 \
+  --min_iterations=1 \
   --observed_topics_true \
   --categorywise_true \
   --trained_user_preferences_file=/home/waldorf/altosaar/projects/arxiv/fit/fit.h5 \

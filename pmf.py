@@ -56,6 +56,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.items_init_scale = items_init_scale
         self.random_state = random_state
         self.verbose = verbose
+        self.max_iter_fixed = 10 # max number of times to switch between fixed user udpates and fixed item updates
 
         if type(self.random_state) is int:
             np.random.seed(self.random_state)
@@ -63,26 +64,6 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             np.random.setstate(self.random_state)
 
         self._parse_args(**kwargs)
-
-        # # create logger
-        # self.logger = logging.getLogger('pmf')
-        # self.logger.setLevel(logging.DEBUG)
-        # # create file handler which logs even debug messages
-        # fh = logging.FileHandler(self.out_dir + 'pmf.log')
-        # fh.setLevel(logging.DEBUG)
-        # # create console handler with a higher log level
-        # ch = logging.StreamHandler()
-        # ch.setLevel(logging.DEBUG)
-        # # create formatter and add it to the handlers
-        # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(lineno)d - %(message)s')
-        # fh.setFormatter(formatter)
-        # ch.setFormatter(formatter)
-        # # add the handlers to the logger
-        # self.logger.addHandler(fh)
-        # self.logger.addHandler(ch)
-        # # example
-        # #self.logger.info('test log creating an instance of auxiliary_module.Auxiliary')
-
 
     def _parse_args(self, **kwargs):
         self.a = float(kwargs.get('a', 0.1))
@@ -147,18 +128,55 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             Returns the instance itself.
         '''
         n_items, n_users = X.shape
-
+        self.n_users = n_users
         if type(theta) == np.ndarray:
             observed_user_preferences = True
 
         self._init_items(n_items, beta=beta, categorywise=categorywise)
         self._init_users(n_users, theta=theta)
-        self._update(X, rows, cols, vad, beta=beta,
-            observed_user_preferences=observed_user_preferences,
-            categorywise=categorywise,
-            user_fit_type=user_fit_type,
-            item_fit_type=item_fit_type,
-            zero_untrained_components=zero_untrained_components)
+        if user_fit_type != 'default':
+            best_validation_ll = -np.inf
+            for switch_idx in xrange(self.max_iter_fixed):
+                if user_fit_type == 'converge_separately':
+                    if switch_idx % 2 == 0:
+                        only_update = 'items'
+                    else:
+                        only_update = 'users'
+
+                    if switch_idx == 1:
+                        initialize_users = 'default'
+                    else:
+                        initialize_users = 'none'
+                self.logger.info('=> only updating {}, switch number {}'
+                    .format(only_update, switch_idx))
+                validation_ll = self._update(X, rows, cols, vad, beta=beta,
+                    theta=theta,
+                    observed_user_preferences=observed_user_preferences,
+                    categorywise=categorywise,
+                    user_fit_type=user_fit_type,
+                    item_fit_type=item_fit_type,
+                    initialize_users = initialize_users,
+                    zero_untrained_components=zero_untrained_components,
+                    only_update=only_update)
+                if validation_ll > best_validation_ll:
+                    best_Eb = self.Eb
+                    # print best_Eb
+                    # print '^Eb'
+                    best_Et = self.Et
+                    # print best_Et
+                    # print '^Et'
+                    # best_self = self
+                    best_validation_ll = validation_ll
+            # self = best_self
+            self.logger.info('best validation ll was {}'.format(best_validation_ll))
+            self.Eb = best_Eb
+            self.Et = best_Et
+        else:
+            _ = self._update(X, rows, cols, vad, beta=beta,
+                                categorywise=categorywise,
+                                user_fit_type=user_fit_type,
+                                item_fit_type=item_fit_type,
+                                zero_untrained_components=zero_untrained_components)
         return self
 
     #def transform(self, X, attr=None):
@@ -191,24 +209,54 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     #    return getattr(self, attr)
 
     def _update(self, X, rows, cols, vad, beta=False,
+        theta=False,
         observed_user_preferences=False,
         categorywise=False,
         item_fit_type='default',
         user_fit_type='default',
-        update='default', zero_untrained_components=False):
+        update='default',
+        zero_untrained_components=False,
+        initialize_users='none',
+        only_update=None):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
             # if user prefs observed, do nothing
-            if observed_user_preferences and update != 'users':
+            if (only_update == 'items' or observed_user_preferences and
+                update != 'default'):
                 pass
-            elif observed_user_preferences and update == 'users':
-                self._update_users(X, rows, cols, beta=beta,
-                    observed_user_preferences=True)
+            elif (only_update == 'users'):
+                if initialize_users == 'default':
+                    if i == 0:
+                        self.logger.info('initializing default users')
+                        self._init_users(self.n_users)
+                    self._update_users(X, rows, cols, beta=False,
+                        observed_user_preferences=False,
+                        only_update=only_update)
+                elif initialize_users == 'trained':
+                    if i == 0:
+                        self.logger.info('updating users with trained prefs')
+                        self._update_users(X, rows, cols, beta=beta,
+                            theta=theta,
+                            observed_user_preferences=True,
+                            observed_item_attributes=False,
+                            only_update=only_update)
+                    if i > 0:
+                        self._update_users(X, rows, cols, beta=beta,
+                            theta=theta,
+                            observed_user_preferences=False,
+                            observed_item_attributes=False,
+                            only_update=only_update)
+                elif initialize_users == 'none':
+                    self._update_users(X, rows, cols, beta=False,
+                        observed_user_preferences=False,
+                        only_update=only_update)
             else:
                 self._update_users(X, rows, cols, beta=beta)
-            if type(beta) == np.ndarray and not categorywise:
-                # do nothing if we have observed betas.
+
+            if (type(beta) == np.ndarray and not categorywise or
+                update == 'users' or only_update == 'users'):
+                # do nothing if we have observed betas or are only updating users
                 pass
             elif item_fit_type != 'default':
                 if zero_untrained_components and i == 1 and update == 'default':
@@ -298,21 +346,26 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                             observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, item_fit_type=item_fit_type,
                             update='in_category')
-                    if user_fit_type == 'converge_separately':
-                        self._update(X, rows, cols, vad, beta=beta,
-                            observed_user_preferences=observed_user_preferences,
-                            user_fit_type=user_fit_type,
-                            categorywise=categorywise,
-                            item_fit_type=item_fit_type,
-                            update='users')
+                    # if user_fit_type == 'converge_separately':
+                    #     self._update(X, rows, cols, vad, beta=beta,
+                    #         observed_user_preferences=observed_user_preferences,
+                    #         user_fit_type=user_fit_type,
+                    #         categorywise=categorywise,
+                    #         item_fit_type=item_fit_type)
                 break
             old_pll = pred_ll
-        pass
+        #pass
+        return pred_ll #return the validation ll
 
-    def _update_users(self, X, rows, cols, beta=False,
-        observed_user_preferences=False):
+    def _update_users(self, X, rows, cols, beta=False, theta=False,
+        observed_user_preferences=False, observed_item_attributes=False,
+        only_update=False):
+
         xexplog = self._xexplog(rows, cols, beta=beta,
             observed_user_preferences=observed_user_preferences)
+
+        self.logger.info('updating users')
+
         ratioT = sparse.csr_matrix(( X.data / xexplog,
                                     (rows, cols)),
                                    dtype=np.float32, shape=X.shape).transpose()
@@ -322,7 +375,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         else:
             expLogElogt = np.exp(self.Elogt)
 
-        if type(beta) == np.ndarray:
+        if type(beta) == np.ndarray or only_update == 'users':
             self.gamma_t = self.a + expLogElogt * \
                 ratioT.dot(self.Eb).T
         else:
@@ -335,6 +388,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     def _update_items(self, X, rows, cols, beta=False, categorywise=False,
         observed_user_preferences=False,
         iteration=None, update='default'):
+
+        self.logger.info('updating items')
 
         xexplog = self._xexplog(rows, cols,
             observed_user_preferences=observed_user_preferences)
@@ -372,12 +427,12 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             self.rho_b = self.d + np.sum(self.Et, axis=1)
         self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
-    def _xexplog(self, rows, cols, beta=False,
+    def _xexplog(self, rows, cols, beta=False, observed_item_attributes=False,
         observed_user_preferences=False):
         '''
         sum_k exp(E[log theta_{ik} * beta_{kd}])
         '''
-        if type(beta) == np.ndarray:
+        if type(beta) == np.ndarray and observed_item_attributes:
             # add trick for log sum exp overflow prevention
             #data = _inner(self.Eb, np.exp(self.Elogt - self.Elogt.max()), rows, cols)
             data = _inner(self.Eb, np.exp(self.Elogt), rows, cols)
@@ -387,8 +442,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             data = _inner(np.exp(self.Elogb), np.exp(self.Elogt), rows, cols)
         return data
 
-    def pred_loglikeli(self, X_new, rows_new, cols_new):
-        X_pred = _inner(self.Eb, self.Et, rows_new, cols_new)
+    def pred_loglikeli(obj, X_new, rows_new, cols_new):
+        X_pred = _inner(obj.Eb, obj.Et, rows_new, cols_new)
         pred_ll = np.mean(X_new * np.log(X_pred) - X_pred)
         return pred_ll
 
