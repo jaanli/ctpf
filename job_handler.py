@@ -38,6 +38,10 @@ parser.add_argument('--user_info_file',
   type=argparse.FileType('r'),
   help="info on users, IDs")
 
+parser.add_argument('--trained_user_preferences_file',
+  type=str,
+  help="trained theta matrix")
+
 parser.add_argument('--out_dir',
   action='store',
   help='directory for output')
@@ -87,10 +91,26 @@ parser.add_argument('--categorywise_false',
   action='store_false',
   help='categorywise fit')
 
-parser.add_argument('--fit_type',
+parser.add_argument('--item_fit_type',
   type=str,
   default='default',
   help='how to fit the model, fit options. converge_in_category_first, converge_out_category_first, alternating_updates')
+
+parser.add_argument('--user_fit_type',
+  type=str,
+  default='default',
+  help='''other than default implies initialization by PF fit.
+
+  options: default,
+  - means don't update the user prefs.
+
+  converge_separately,
+  - after fitting the item attr, re-fit user prefs after initializing them,
+    w/item attr fixed.
+
+  alternating
+  - after fitting item attr, init user prefs, alternate between item_fit_type
+  update and updating users ''')
 
 parser.add_argument('--zero_untrained_components_true',
   dest='zero_untrained_components',
@@ -122,10 +142,10 @@ parser.add_argument('--min_iterations',
 args = parser.parse_args()
 
 # validate arguments
-if args.categorywise and args.fit_type == 'default':
-  raise Exception('need to specify fit_type for categorywise!')
+if args.categorywise and args.item_fit_type == 'default':
+  raise Exception('need to specify item_fit_type for categorywise!')
 
-if args.fit_type == 'alternating_updates' and args.zero_untrained_components:
+if args.item_fit_type == 'alternating_updates' and args.zero_untrained_components:
   raise Exception('cannot zero_untrained_components with alternating_updates!')
 
 logger = logging.getLogger()
@@ -190,6 +210,14 @@ test = dict(X_new=test_smat.data,
   rows_new=rows_test,
   cols_new=cols_test)
 
+if args.trained_user_preferences_file:
+  h5f_t = h5py.File(args.trained_user_preferences_file)
+  Et_t = h5f_t['Et_t'][:]
+  Et_loaded = Et_t.T
+  logger.info('loaded trained user preferences from fit file')
+else:
+  Et_loaded = False
+
 logger.info('=>running fit')
 
 h5f = h5py.File('{}fit.h5'.format(args.out_dir), 'w')
@@ -205,7 +233,8 @@ if args.model == 'pmf':
   else:
     if args.observed_topics:
         coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-          categorywise=args.categorywise, fit_type=args.fit_type,
+          theta=Et_loaded, user_fit_type=args.user_fit_type,
+          categorywise=args.categorywise, item_fit_type=args.item_fit_type,
           zero_untrained_components=args.zero_untrained_components)
     else:
       coder.fit(train_data, rows, cols, validation)
@@ -239,12 +268,12 @@ elif args.model == 'ctpf':
       util.calculate_loglikelihood(coder_pmf, train, validation, test)
 
       # fit ctpf with fixed user prefs and observed topics
-      # fit_type = 'default': just fit epsilons normally.
-      # fit_type = alternating: update in_category components, then out_category components.
-      # fit_type = converge_in_category_components first:
+      # item_fit_type = 'default': just fit epsilons normally.
+      # item_fit_type = alternating: update in_category components, then out_category components.
+      # item_fit_type = converge_in_category_components first:
       coder.fit(train_data, rows, cols, validation, beta=observed_categories,
         theta=coder_pmf.Et, categorywise=args.categorywise,
-        fit_type=args.fit_type,
+        item_fit_type=args.item_fit_type,
         zero_untrained_components=args.zero_untrained_components)
     else:
       # just run vanilla ctpf
@@ -269,11 +298,10 @@ elif args.model == 'hpmf':
   else:
     if args.observed_topics:
       coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-        categorywise=args.categorywise, fit_type=args.fit_type,
+        categorywise=args.categorywise, item_fit_type=args.item_fit_type,
         zero_untrained_components=args.zero_untrained_components)
     else:
       coder.fit(train_data, rows, cols, validation)
-
     Et_t = np.ascontiguousarray(coder.Et.T)
     Eb_t = np.ascontiguousarray(coder.Eb.T)
     h5f.create_dataset('Eb_t', data=Eb_t)

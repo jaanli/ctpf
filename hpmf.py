@@ -123,7 +123,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
             self.Eeta, _ = _compute_expectations(self.gamma_eta, self.rho_eta)
 
     def fit(self, X, rows, cols, vad,
-        beta=False, theta=False, categorywise=False, fit_type='default',
+        beta=False, theta=False, categorywise=False, item_fit_type='default',
         zero_untrained_components=False):
         '''Fit the model to the data in X.
 
@@ -141,7 +141,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
         self._init_items(n_items, beta=beta)
         self._init_users(n_users)
         self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise,
-            fit_type=fit_type,
+            item_fit_type=item_fit_type,
             zero_untrained_components=zero_untrained_components)
         return self
 
@@ -175,34 +175,34 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
     #    return getattr(self, attr)
 
     def _update(self, X, rows, cols, vad, beta=False, categorywise=False,
-        fit_type='default', update='default', zero_untrained_components=False):
+        item_fit_type='default', update='default', zero_untrained_components=False):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
             self._update_users(X, rows, cols, beta=beta)
             if type(beta) == np.ndarray and not categorywise:
                 pass
-            elif fit_type != 'default':
+            elif item_fit_type != 'default':
                 if zero_untrained_components and i == 1 and update == 'default':
                     # store the initial values somewhere, then zero them out,
                     # then load them back in once they've been fit
                     beta_bool = beta.astype(bool)
                     beta_bool_not = np.logical_not(beta_bool)
                     small_num = 1e-5
-                    if fit_type == 'converge_in_category_first':
+                    if item_fit_type == 'converge_in_category_first':
                         # zero out out_category components
                         gamma_b_out_category = self.gamma_b[beta_bool_not]
                         rho_b_out_category = self.rho_b[beta_bool_not]
                         self.gamma_b[beta_bool_not] = small_num
                         self.rho_b[beta_bool_not] = small_num
-                    elif fit_type == 'converge_out_category_first':
+                    elif item_fit_type == 'converge_out_category_first':
                         # zero out in_category components
                         gamma_b_in_category = self.gamma_b[beta_bool]
                         rho_b_in_category = self.rho_b[beta_bool]
                         self.gamma_b[beta_bool] = small_num
                         self.rho_b[beta_bool] = small_num
                 if (type(beta) == np.ndarray and categorywise and
-                    fit_type == 'alternating_updates'):
+                    item_fit_type == 'alternating_updates'):
                     # alternate between updating in-category and out-category components of items
                     if i % 2 == 0:
                         self._update_items(X, rows, cols, beta=beta,
@@ -213,7 +213,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
                             categorywise=categorywise, iteration=i,
                             update='out_category')
                 elif (type(beta) == np.ndarray and categorywise and
-                    fit_type == 'converge_in_category_first'):
+                    item_fit_type == 'converge_in_category_first'):
                     # first update in-category components
                     if update == 'default':
                         self._update_items(X, rows, cols, beta=beta,
@@ -222,7 +222,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
                         self._update_items(X, rows, cols, beta=beta,
                             categorywise=categorywise, update=update)
                 elif (type(beta) == np.ndarray and categorywise and
-                    fit_type == 'converge_out_category_first'):
+                    item_fit_type == 'converge_out_category_first'):
                     # first update out-category components
                     if update == 'default':
                         self._update_items(X, rows, cols, beta=beta,
@@ -242,8 +242,8 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
                       'Improvement: %.5f' % (i, pred_ll, old_pll, improvement))
                 sys.stdout.flush()
             if improvement < self.tol and i > self.min_iter:
-                if update == 'default' and fit_type != 'default':
-                    if fit_type == 'converge_in_category_first':
+                if update == 'default' and item_fit_type != 'default':
+                    if item_fit_type == 'converge_in_category_first':
                         # we converged in-category. now converge out_category
                         if zero_untrained_components:
                             self.logger.info(
@@ -251,9 +251,9 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
                             self.gamma_b[beta_bool_not] = gamma_b_out_category
                             self.rho_b[beta_bool_not] = rho_b_out_category
                         self._update(X, rows, cols, vad, beta=beta,
-                            categorywise=categorywise, fit_type=fit_type,
+                            categorywise=categorywise, item_fit_type=item_fit_type,
                             update='out_category')
-                    if fit_type == 'converge_out_category_first':
+                    if item_fit_type == 'converge_out_category_first':
                         # we converged out-category. now converge in_category
                         if zero_untrained_components:
                             self.logger.info(
@@ -261,7 +261,7 @@ class HPoissonMF(BaseEstimator, TransformerMixin):
                             self.gamma_b[beta_bool] = gamma_b_in_category
                             self.rho_b[beta_bool] = rho_b_in_category
                         self._update(X, rows, cols, vad, beta=beta,
-                            categorywise=categorywise, fit_type=fit_type,
+                            categorywise=categorywise, item_fit_type=item_fit_type,
                             update='in_category')
                 break
             old_pll = pred_ll
