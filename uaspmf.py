@@ -28,7 +28,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.smoothness = smoothness
         self.random_state = random_state
         self.verbose = verbose
-        self.max_iter_fixed = 10
+        self.max_iter_fixed = 4
 
         if type(self.random_state) is int:
             np.random.seed(self.random_state)
@@ -147,7 +147,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                         initialize_users = 'none'
                     self.logger.info('=> only updating {}, switch number {}'
                         .format(only_update, switch_idx))
-                    validation_ll = self._update(X, rows, cols, vad, beta=beta,
+                    validation_ll, best_pll_dict = self._update(X, rows, cols, vad, beta=beta,
                         theta=theta,
                         categorywise=categorywise,
                         user_fit_type=user_fit_type,
@@ -156,6 +156,16 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                         zero_untrained_components=zero_untrained_components,
                         observed_user_preferences=True,
                         only_update=only_update)
+                    new_validation_ll = best_pll_dict['pred_ll']
+                    self.logger.info('set params to best pll {}, old one was {}'
+                        .format(new_validation_ll, validation_ll))
+                    validation_ll = new_validation_ll
+                    self.Eba = best_pll_dict['best_Eba']
+                    self.Ebs = best_pll_dict['best_Ebs']
+                    self.Et = best_pll_dict['best_Et']
+                    self.Elogba = best_pll_dict['best_Elogba']
+                    self.Elogbs = best_pll_dict['best_Elogbs']
+                    self.Elogt = best_pll_dict['best_Elogt']
                     if validation_ll > best_validation_ll:
                         best_Eba = self.Eba
                         best_Ebs = self.Ebs
@@ -188,6 +198,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         update='default'):
         # alternating between update latent components and weights
         old_pll = -np.inf
+        best_pll_dict = dict(pred_ll = -np.inf)
         for i in xrange(self.max_iter):
             if (only_update == 'items' or
                 observed_user_preferences and
@@ -260,6 +271,17 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             if np.isnan(pred_ll):
                 self.logger.error('got nan in predictive ll')
                 raise Exception('nan in predictive ll')
+            else:
+                if pred_ll > best_pll_dict['pred_ll']:
+                    best_pll_dict['pred_ll'] = pred_ll
+                    self.logger.info('logged new best pred_ll as {}'
+                        .format(pred_ll))
+                    best_pll_dict['best_Eba'] = self.Eba
+                    best_pll_dict['best_Elogba'] = self.Elogba
+                    best_pll_dict['best_Ebs'] = self.Ebs
+                    best_pll_dict['best_Elogbs'] = self.Elogbs
+                    best_pll_dict['best_Et'] = self.Et
+                    best_pll_dict['best_Elogt'] = self.Elogt
             improvement = (pred_ll - old_pll) / abs(old_pll)
             if self.verbose:
                 string = 'ITERATION: %d\tPred_ll: %.2f\tOld Pred_ll: %.2f\tImprovement: %.5f' % (i, pred_ll, old_pll, improvement)
@@ -292,7 +314,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 break
             old_pll = pred_ll
         #pass
-        return pred_ll
+        return pred_ll, best_pll_dict
 
     def _update_users(self, X, rows, cols, beta=False, theta=False, observed_user_preferences=False,
         observed_item_attributes=False,

@@ -251,7 +251,7 @@ elif args.model == 'ctpf':
   song2artist = np.array([n for n in range(n_docs)])
   # first fit vanilla poisson factorization for user preferences
   coder = uaspmf.PoissonMF(n_components=n_categories, smoothness=100,
-      max_iter=100, random_state=98765, verbose=True,
+      max_iter=15, random_state=98765, verbose=True,
       a=0.3, b=0.3, c=0.3, d=0.3, f=0.3, g=0.3, s2a=song2artist,
       min_iter=args.min_iterations)
   if args.resume:

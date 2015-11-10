@@ -16,7 +16,7 @@ python job_handler.py \
   --out_dir=${out_dir} \
   --binarize_true \
   --model=pmf \
-  --item_fit_type=converge_in_category_first \
+  --item_fit_type=alternating_updates \
   --user_fit_type=converge_separately \
   --min_iterations=3 \
   --zero_untrained_components_false \

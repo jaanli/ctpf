@@ -40,7 +40,7 @@ parameters = dict(model = ['pmf', 'ctpf'],
 
 # create timestamped directory in fit
 now = time.localtime()[0:3]
-base_dir_name = out_dir + '{}-{}-{}'.format(now[0], now[1], now[2])
+base_dir_name = out_dir + '{}-{}-{}_best_ll'.format(now[0], now[1], now[2])
 
 for setting in dict_product(parameters):
 
