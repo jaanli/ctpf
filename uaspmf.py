@@ -28,7 +28,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.smoothness = smoothness
         self.random_state = random_state
         self.verbose = verbose
-        self.max_iter_fixed = 4
+        self.max_iter_fixed = 3
 
         if type(self.random_state) is int:
             np.random.seed(self.random_state)
