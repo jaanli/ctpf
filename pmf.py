@@ -132,6 +132,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
 
     def fit(self, X, rows, cols, vad,
         beta=False, theta=False, categorywise=False, item_fit_type='default',
+        user_fit_type='default',
         zero_untrained_components=False):
         '''Fit the model to the data in X.
 
