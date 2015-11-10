@@ -102,15 +102,15 @@ parser.add_argument('--user_fit_type',
   help='''other than default implies initialization by PF fit.
 
   options: default,
-  - means don't update the user prefs.
+  - means don't update the user prefs, keep them fixed.
 
   converge_separately,
   - after fitting the item attr, re-fit user prefs after initializing them,
-    w/item attr fixed.
+    w/item attr fixed. then re-fit the item attr's and iterate til convergence.
 
   alternating
   - after fitting item attr, init user prefs, alternate between item_fit_type
-  update and updating users ''')
+  update and updating users til convergence''')
 
 parser.add_argument('--zero_untrained_components_true',
   dest='zero_untrained_components',

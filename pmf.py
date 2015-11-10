@@ -147,9 +147,16 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             Returns the instance itself.
         '''
         n_items, n_users = X.shape
+
+        if type(theta) == np.ndarray:
+            observed_user_preferences = True
+
         self._init_items(n_items, beta=beta, categorywise=categorywise)
         self._init_users(n_users, theta=theta)
-        self._update(X, rows, cols, vad, beta=beta, categorywise=categorywise,
+        self._update(X, rows, cols, vad, beta=beta,
+            observed_user_preferences=observed_user_preferences,
+            categorywise=categorywise,
+            user_fit_type=user_fit_type,
             item_fit_type=item_fit_type,
             zero_untrained_components=zero_untrained_components)
         return self
@@ -183,12 +190,20 @@ class PoissonMF(BaseEstimator, TransformerMixin):
     #    self._update(X, update_beta=False)
     #    return getattr(self, attr)
 
-    def _update(self, X, rows, cols, vad, beta=False, categorywise=False,
-        item_fit_type='default', update='default', zero_untrained_components=False):
+    def _update(self, X, rows, cols, vad, beta=False,
+        observed_user_preferences=False,
+        categorywise=False,
+        item_fit_type='default',
+        user_fit_type='default',
+        update='default', zero_untrained_components=False):
         # alternating between update latent components and weights
         old_pll = -np.inf
         for i in xrange(self.max_iter):
-            self._update_users(X, rows, cols, beta=beta)
+            # if user prefs observed, do nothing
+            if observed_user_preferences:
+                pass
+            else:
+                self._update_users(X, rows, cols, beta=beta)
             if type(beta) == np.ndarray and not categorywise:
                 # do nothing if we have observed betas.
                 pass
@@ -216,10 +231,12 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                     # alternate between updating in-category and out-category components of items
                     if i % 2 == 0:
                         self._update_items(X, rows, cols, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, iteration=i,
                             update='in_category')
                     else:
                         self._update_items(X, rows, cols, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, iteration=i,
                             update='out_category')
                 elif (type(beta) == np.ndarray and categorywise and
@@ -227,18 +244,22 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                     # first update in-category components
                     if update == 'default':
                         self._update_items(X, rows, cols, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, update='in_category')
                     else:
                         self._update_items(X, rows, cols, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, update=update)
                 elif (type(beta) == np.ndarray and categorywise and
                     item_fit_type == 'converge_out_category_first'):
                     # first update out-category components
                     if update == 'default':
                         self._update_items(X, rows, cols, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, update='out_category')
                     else:
                         self._update_items(X, rows, cols, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, update=update)
             else:
                 self._update_items(X, rows, cols)
@@ -260,6 +281,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                             self.gamma_b[beta_bool_not] = gamma_b_out_category
                             self.rho_b[beta_bool_not] = rho_b_out_category
                         self._update(X, rows, cols, vad, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, item_fit_type=item_fit_type,
                             update='out_category')
                     if item_fit_type == 'converge_out_category_first':
@@ -270,58 +292,50 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                             self.gamma_b[beta_bool] = gamma_b_in_category
                             self.rho_b[beta_bool] = rho_b_in_category
                         self._update(X, rows, cols, vad, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
                             categorywise=categorywise, item_fit_type=item_fit_type,
+                            update='in_category')
+                    if user_fit_type == 'converge_separately':
+                        self._update(X, rows, cols, vad, beta=beta,
+                            observed_user_preferences=observed_user_preferences,
+                            user_fit_type=user_fit_type,
+                            categorywise=categorywise,
+                            item_fit_type=item_fit_type,
                             update='in_category')
                 break
             old_pll = pred_ll
         pass
 
-    def _update_users(self, X, rows, cols, beta=False):
-        xexplog = self._xexplog(rows, cols, beta=beta)
+    def _update_users(self, X, rows, cols, beta=False,
+        observed_user_preferences=False):
+        xexplog = self._xexplog(rows, cols, beta=beta,
+            observed_user_preferences=observed_user_preferences)
         ratioT = sparse.csr_matrix(( X.data / xexplog,
                                     (rows, cols)),
                                    dtype=np.float32, shape=X.shape).transpose()
+        if observed_user_preferences:
+            expLogElogt = self.Et
+        else:
+            expLogElogt = np.exp(self.Elogt)
+
         if type(beta) == np.ndarray:
-            # for n in range(0, self.Eb.shape[0]+1):
-            #     dot = ratioT[0,0:n].dot(self.Eb[0:n,0])
-            #     if np.isnan(dot):
-            #         print 'got nan at'
-            #         print n
-            # for n in range(ratioT[0].shape[0]+1):
-            #     prod = ratioT[0,n] * (self.Eb[n,0])
-            #     if np.isnan(prod):
-            #         print n
-            #     if n % 10000 == 0:
-            #         print 'iter'
-            #         print n
-            # print 'ratioT[0,:] dot Eb[:,0] at 157141'
-            # print ratioT[0,157141] # = inf!
-            # print self.Eb[157141, 0]
-            # print ratioT[0,157141] * self.Eb[157141, 0]
-            #dotprod = 0
-            # for n, el in enumerate(self.Eb[:,0]):
-            #     prod = el * ratioT[0, n]
-            #     dotprod += prod
-            #     if np.isnan(dotprod):
-            #         print 'got dot product nan at:' + str(n)
-            #     if np.isnan(prod):
-            #         print 'got prod nan at ' + str(n)
-            #print ratioT[0,:].dot(self.Eb[:,0]) #was =nan with dropped docs!
-            # we don't have Elogb and don't need it.
-            # add trick for logsumexp overflow prevention
-            # self.gamma_t = self.a + np.exp(self.Elogt - self.Elogt.max()) * \
-            #     ratioT.dot(self.Eb).T
-            self.gamma_t = self.a + np.exp(self.Elogt) * \
+            self.gamma_t = self.a + expLogElogt * \
                 ratioT.dot(self.Eb).T
         else:
-            self.gamma_t = self.a + np.exp(self.Elogt) * \
+            self.gamma_t = self.a + expLogElogt * \
                 ratioT.dot(np.exp(self.Elogb)).T
+
         self.rho_t = self.b + np.sum(self.Eb, axis=0, keepdims=True).T
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
 
     def _update_items(self, X, rows, cols, beta=False, categorywise=False,
+        observed_user_preferences=False,
         iteration=None, update='default'):
-        ratio = sparse.csr_matrix((X.data / self._xexplog(rows, cols),
+
+        xexplog = self._xexplog(rows, cols,
+            observed_user_preferences=observed_user_preferences)
+
+        ratio = sparse.csr_matrix((X.data / xexplog,
                                    (rows, cols)),
                                   dtype=np.float32, shape=X.shape)
         if (type(beta) == np.ndarray and
@@ -329,8 +343,12 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 update != 'default'):
 
             beta_bool = beta.astype(bool)
-            gamma_b_updated = self.c + np.exp(self.Elogb) * \
-                ratio.dot(np.exp(self.Elogt.T))
+            if observed_user_preferences:
+                gamma_b_updated = self.c + np.exp(self.Elogb) * \
+                    ratio.dot(self.Et.T)
+            else:
+                gamma_b_updated = self.c + np.exp(self.Elogb) * \
+                    ratio.dot(np.exp(self.Elogt.T))
             rho_b_updated = self.d + np.sum(self.Et, axis=1)
             rho_b_updated_reshaped = np.reshape(np.repeat(rho_b_updated,
                 self.rho_b.shape[0], axis=0), self.rho_b.shape)
@@ -350,7 +368,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             self.rho_b = self.d + np.sum(self.Et, axis=1)
         self.Eb, self.Elogb = _compute_expectations(self.gamma_b, self.rho_b)
 
-    def _xexplog(self, rows, cols, beta=False):
+    def _xexplog(self, rows, cols, beta=False,
+        observed_user_preferences=False):
         '''
         sum_k exp(E[log theta_{ik} * beta_{kd}])
         '''
@@ -358,6 +377,8 @@ class PoissonMF(BaseEstimator, TransformerMixin):
             # add trick for log sum exp overflow prevention
             #data = _inner(self.Eb, np.exp(self.Elogt - self.Elogt.max()), rows, cols)
             data = _inner(self.Eb, np.exp(self.Elogt), rows, cols)
+        elif observed_user_preferences:
+            data = _inner(np.exp(self.Elogb), self.Et, rows, cols)
         else:
             data = _inner(np.exp(self.Elogb), np.exp(self.Elogt), rows, cols)
         return data

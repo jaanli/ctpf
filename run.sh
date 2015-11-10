@@ -17,10 +17,11 @@ python job_handler.py \
   --binarize_true \
   --model=pmf \
   --categorywise_false \
-  --item_fit_type=default \
-  --user_fit_type=default \
+  --item_fit_type=alternating_updates \
+  --user_fit_type=converge_separately \
   --zero_untrained_components_false \
-  --min_iterations=5 \
+  --min_iterations=10 \
   --observed_topics_true \
+  --categorywise_true \
   --trained_user_preferences_file=/home/waldorf/altosaar/projects/arxiv/fit/fit.h5 \
   --stdout \
