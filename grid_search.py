@@ -17,19 +17,23 @@ validation_file = in_dir + 'validation.tsv'
 test_file = in_dir + 'test.tsv'
 item_info_file = in_dir + 'items_arxiv_info.tsv'
 user_info_file = in_dir + 'users.tsv'
+trained_user_preferences_file = '/home/waldorf/altosaar/projects/arxiv/fit/2015-11-3-pmf-binarize_true-observed_topics_true/fit.h5'
 
-parameters = dict(model = ['pmf', 'hpmf'],
+
+parameters = dict(model = ['pmf', 'ctpf'],
   binarize = ['binarize_true'],
   observed_topics = ['observed_topics_true'],
   categorywise = ['categorywise_true'],
-  fit_type = ['converge_in_category_first', 'converge_out_category_first', 'alternating_updates'],
-  zero_untrained_components = ['zero_untrained_components_true', 'zero_untrained_components_false'],
+  item_fit_type = ['converge_in_category_first', 'converge_out_category_first', 'alternating_updates'],
+  user_fit_type = ['converge_separately'],
+  zero_untrained_components = ['zero_untrained_components_false'],
   train_file = [train_file],
   validation_file = [validation_file],
   test_file = [test_file],
   item_info_file = [item_info_file],
   user_info_file = [user_info_file],
-  min_iterations = ['10'],
+  trained_user_preferences_file = [trained_user_preferences_file],
+  min_iterations = ['3'],
   stdout = ['stdout'],
   #resume = ['resume']
   )
@@ -40,11 +44,10 @@ base_dir_name = out_dir + '{}-{}-{}'.format(now[0], now[1], now[2])
 
 for setting in dict_product(parameters):
 
-  out_dir_path = '{}-{}-{}-{}-{}/'.format(base_dir_name,
+  out_dir_path = '{}-{}-{}-{}/'.format(base_dir_name,
     setting['model'],
     setting['categorywise'],
-    setting['fit_type'],
-    setting['zero_untrained_components'])
+    setting['item_fit_type'])
   if not os.path.exists(out_dir_path):
     os.makedirs(out_dir_path)
 

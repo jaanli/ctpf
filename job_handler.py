@@ -148,6 +148,9 @@ if args.categorywise and args.item_fit_type == 'default':
 if args.item_fit_type == 'alternating_updates' and args.zero_untrained_components:
   raise Exception('cannot zero_untrained_components with alternating_updates!')
 
+if args.item_fit_type == 'alternating_updates' and args.model == 'ctpf':
+  raise Exception('unsupported alternating updates with ctpf currently')
+
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
@@ -260,21 +263,24 @@ elif args.model == 'ctpf':
   else:
     if args.observed_topics:
       # run vanilla PF to get user prefs first
-      coder_pmf = pmf.PoissonMF(n_components=n_categories, random_state=98765,
-        verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
-      coder_pmf.fit(train_data, rows, cols, validation, beta=observed_categories)
+      # coder_pmf = pmf.PoissonMF(n_components=n_categories, random_state=98765,
+      #   verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
+      # coder_pmf.fit(train_data, rows, cols, validation, beta=observed_categories)
 
-      # calc log-likelihood of this
-      util.calculate_loglikelihood(coder_pmf, train, validation, test)
+      # # calc log-likelihood of this
+      # util.calculate_loglikelihood(coder_pmf, train, validation, test)
 
       # fit ctpf with fixed user prefs and observed topics
       # item_fit_type = 'default': just fit epsilons normally.
       # item_fit_type = alternating: update in_category components, then out_category components.
       # item_fit_type = converge_in_category_components first:
       coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-        theta=coder_pmf.Et, categorywise=args.categorywise,
+        theta=Et_loaded,
+        categorywise=args.categorywise,
         item_fit_type=args.item_fit_type,
-        zero_untrained_components=args.zero_untrained_components)
+        user_fit_type=args.user_fit_type,
+        zero_untrained_components=args.zero_untrained_components
+        )
     else:
       # just run vanilla ctpf
       coder.fit(train_data, rows, cols, validation)
