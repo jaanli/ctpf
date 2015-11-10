@@ -200,8 +200,11 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         old_pll = -np.inf
         for i in xrange(self.max_iter):
             # if user prefs observed, do nothing
-            if observed_user_preferences:
+            if observed_user_preferences and update != 'users':
                 pass
+            elif observed_user_preferences and update == 'users':
+                self._update_users(X, rows, cols, beta=beta,
+                    observed_user_preferences=True)
             else:
                 self._update_users(X, rows, cols, beta=beta)
             if type(beta) == np.ndarray and not categorywise:
@@ -301,7 +304,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                             user_fit_type=user_fit_type,
                             categorywise=categorywise,
                             item_fit_type=item_fit_type,
-                            update='in_category')
+                            update='users')
                 break
             old_pll = pred_ll
         pass
@@ -314,6 +317,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                                     (rows, cols)),
                                    dtype=np.float32, shape=X.shape).transpose()
         if observed_user_preferences:
+            self.logger.info('updating user preferences based on fixed values')
             expLogElogt = self.Et
         else:
             expLogElogt = np.exp(self.Elogt)
