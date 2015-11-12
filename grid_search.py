@@ -48,8 +48,6 @@ for setting in dict_product(parameters):
     setting['model'],
     setting['categorywise'],
     setting['item_fit_type'])
-  if not os.path.exists(out_dir_path):
-    os.makedirs(out_dir_path)
 
   setting['out_dir'] = out_dir_path
 

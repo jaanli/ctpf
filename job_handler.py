@@ -47,15 +47,25 @@ parser.add_argument('--out_dir',
   help='directory for output')
 
 # training options
-parser.add_argument('--observed_topics_true',
-  dest='observed_topics',
+parser.add_argument('--observed_item_attributes_true',
+  dest='observed_item_attributes',
   action="store_true",
   help="fix the topic matrix")
 
-parser.add_argument('--observed_topics_false',
-  dest='observed_topics',
+parser.add_argument('--observed_item_attributes_false',
+  dest='observed_item_attributes',
   action="store_false",
   help="do not fix the topic matrix")
+
+parser.add_argument('--observed_user_preferences_true',
+  dest='observed_user_preferences',
+  action="store_true",
+  help="fix the user prefs matrix")
+
+parser.add_argument('--observed_user_preferences_false',
+  dest='observed_user_preferences',
+  action="store_false",
+  help="do not fix the user prefs matrix")
 
 parser.add_argument('--binarize_true',
   dest='binarize',
@@ -93,7 +103,7 @@ parser.add_argument('--categorywise_false',
 
 parser.add_argument('--item_fit_type',
   type=str,
-  default='default',
+  default='all_categories',
   help='how to fit the model, fit options. converge_in_category_first, converge_out_category_first, alternating_updates')
 
 parser.add_argument('--user_fit_type',
@@ -142,7 +152,7 @@ parser.add_argument('--min_iterations',
 args = parser.parse_args()
 
 # validate arguments
-if args.categorywise and args.item_fit_type == 'default':
+if args.categorywise and args.item_fit_type == 'all_categories':
   raise Exception('need to specify item_fit_type for categorywise!')
 
 if args.item_fit_type == 'alternating_updates' and args.zero_untrained_components:
@@ -150,6 +160,12 @@ if args.item_fit_type == 'alternating_updates' and args.zero_untrained_component
 
 if args.item_fit_type == 'alternating_updates' and args.model == 'ctpf':
   raise Exception('unsupported alternating updates with ctpf currently')
+
+if args.observed_user_preferences and not args.trained_user_preferences_file:
+  raise Exception('need trained user preferences to fix user prefs')
+
+if not os.path.exists(args.out_dir):
+  os.makedirs(args.out_dir)
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -176,7 +192,7 @@ id2arxiv_info = pd.read_csv(args.item_info_file, header=None, delimiter='\t', na
 unique_did = list(id2arxiv_info.index)
 n_docs = np.unique(unique_did).shape[0]
 
-if args.observed_topics:
+if args.observed_item_attributes or args.categorywise:
   document_category_dummies = id2arxiv_info['categories'].str.join(sep='').str.get_dummies(sep=' ')
   category_list = list(document_category_dummies.columns)
   n_categories = len(category_list)
@@ -186,6 +202,7 @@ if args.observed_topics:
   assert len(np.where(~observed_categories.any(axis=1))[0]) == 0
 else:
   n_categories = 166
+  observed_categories = False
 
 logger.info('number of categories is k={}'.format(n_categories))
 
@@ -234,7 +251,7 @@ if args.model == 'pmf':
     Et_t = h5f['Et_t'][:]
     logging.info('loaded fit!')
   else:
-    if args.observed_topics:
+    if args.observed_item_attributes:
         coder.fit(train_data, rows, cols, validation, beta=observed_categories,
           theta=Et_loaded, user_fit_type=args.user_fit_type,
           categorywise=args.categorywise, item_fit_type=args.item_fit_type,
@@ -253,7 +270,15 @@ elif args.model == 'ctpf':
   coder = uaspmf.PoissonMF(n_components=n_categories, smoothness=100,
       max_iter=8, random_state=98765, verbose=True,
       a=0.3, b=0.3, c=0.3, d=0.3, f=0.3, g=0.3, s2a=song2artist,
-      min_iter=args.min_iterations)
+      min_iter=args.min_iterations,
+      beta=observed_categories,
+      theta=Et_loaded,
+      categorywise=args.categorywise,
+      item_fit_type=args.item_fit_type,
+      user_fit_type=args.user_fit_type,
+      observed_item_attributes=args.observed_item_attributes,
+      observed_user_preferences=args.observed_user_preferences,
+      zero_untrained_components=args.zero_untrained_components)
   if args.resume:
     Eba_t = h5f['Eba_t'][:]
     Ebs_t = h5f['Ebs_t'][:]
@@ -261,7 +286,7 @@ elif args.model == 'ctpf':
     Eb_t = Ebs_t + Eba_t
     logging.info('loaded fit!')
   else:
-    if args.observed_topics:
+    if args.observed_item_attributes:
       # run vanilla PF to get user prefs first
       # coder_pmf = pmf.PoissonMF(n_components=n_categories, random_state=98765,
       #   verbose=True, a=0.1, b=0.1, c=0.1, d=0.1, logger=logger)
@@ -274,13 +299,7 @@ elif args.model == 'ctpf':
       # item_fit_type = 'default': just fit epsilons normally.
       # item_fit_type = alternating: update in_category components, then out_category components.
       # item_fit_type = converge_in_category_components first:
-      coder.fit(train_data, rows, cols, validation, beta=observed_categories,
-        theta=Et_loaded,
-        categorywise=args.categorywise,
-        item_fit_type=args.item_fit_type,
-        user_fit_type=args.user_fit_type,
-        zero_untrained_components=args.zero_untrained_components
-        )
+      coder.fit(train_data, rows, cols, validation)
     else:
       # just run vanilla ctpf
       coder.fit(train_data, rows, cols, validation)
@@ -302,7 +321,7 @@ elif args.model == 'hpmf':
     Et_t = h5f['Et_t'][:]
     logging.info('loaded fit!')
   else:
-    if args.observed_topics:
+    if args.observed_item_attributes:
       coder.fit(train_data, rows, cols, validation, beta=observed_categories,
         categorywise=args.categorywise, item_fit_type=args.item_fit_type,
         zero_untrained_components=args.zero_untrained_components)
