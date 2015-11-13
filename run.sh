@@ -1,14 +1,13 @@
 #!/bin/bash
 # this script is for debugging and quick runs
 
+dir=/home/statler/lcharlin/arxiv/dat/dataset_toy/
+out_dir=/home/waldorf/altosaar/projects/arxiv/fit/2015-11-9-debug/
+user_prefs=/home/waldorf/altosaar/projects/arxiv/fit/fit.h5
 
-# dir=/home/statler/lcharlin/arxiv/dat/dataset_toy/
-# out_dir=/home/waldorf/altosaar/projects/arxiv/fit/2015-11-9-debug/
-# user_prefs=/home/waldorf/altosaar/projects/arxiv/fit/fit.h5
-
-dir=/home/statler/lcharlin/arxiv/dat/dataset_2003-2012_clean/
-out_dir=/home/waldorf/altosaar/projects/arxiv/fit/2015-11-12-ctpf-stagewise-manual_3/
-user_prefs=/home/waldorf/altosaar/projects/arxiv/fit/2015-11-3-pmf-binarize_true-observed_item_attributes_true/fit.h5
+# dir=/home/statler/lcharlin/arxiv/dat/dataset_2003-2012_clean/
+# out_dir=/home/waldorf/altosaar/projects/arxiv/fit/2015-11-12-ctpf-stagewise-manual_4/
+# user_prefs=/home/waldorf/altosaar/projects/arxiv/fit/2015-11-3-pmf-binarize_true-observed_topics_true/fit.h5
 
 python job_handler.py \
   --train_file=${dir}train.tsv \

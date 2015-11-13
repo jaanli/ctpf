@@ -183,12 +183,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 if validation_ll > best_validation_ll:
                     best_Eba = self.Eba
                     best_Ebs = self.Ebs
-                    # print best_Eb
-                    # print '^Eb'
                     best_Et = self.Et
-                    # print best_Et
-                    # print '^Et'
-                    # best_self = self
                     best_validation_ll = validation_ll
                 self.logger.info('best validation ll was {}'.format(
                     best_validation_ll))
@@ -214,9 +209,13 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                 pass
             elif (update_users_or_items == 'users'):
                 if initialize_users == 'initialize' and i == 0:
-                    self.observed_user_preferences = False
-                    self._init_users(self.n_users)
-                self._update_users(X, rows, cols)
+                    #self.observed_user_preferences = False
+                    #self._init_users(self.n_users)
+                    self.logger.info('switching from obs user prefs: {}'.format(self.observed_user_preferences))
+                    self._update_users(X, rows, cols, switch_from_observed_user_preferences=True)
+                    self.logger.info('switched from obs user prefs, now it is: {}'.format(self.observed_user_preferences))
+                else:
+                    self._update_users(X, rows, cols)
             else:
                 self._update_users(X, rows, cols)
 
@@ -304,7 +303,7 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         #pass
         return pred_ll, best_pll_dict
 
-    def _update_users(self, X, rows, cols):
+    def _update_users(self, X, rows, cols, switch_from_observed_user_preferences=False):
         self.logger.info('updating users')
 
         if self.observed_item_attributes:
@@ -317,6 +316,10 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         else:
             expElogt = np.exp(self.Elogt)
 
+        if self.observed_corrections:
+            expElogba = self.Eba
+        else:
+            expElogba = np.exp(self.Elogba)[self.song2artist]
 
         ratioTs = sparse.csr_matrix((X.data / self._xexplog_bs(rows, cols),
                                     (rows, cols)),
@@ -327,13 +330,17 @@ class PoissonMF(BaseEstimator, TransformerMixin):
         self.gamma_t = self.a + expElogt * \
             ratioTs.dot(expElogbs).T + \
             expElogt * \
-            ratioTa.dot(np.exp(self.Elogba)[self.song2artist]).T
+            ratioTa.dot(expElogba).T
 
         self.rho_t = self.b + np.sum(
             self.Eba[self.song2artist], axis=0, keepdims=True).T + \
             np.sum(self.Ebs, axis=0, keepdims=True).T
 
         self.Et, self.Elogt = _compute_expectations(self.gamma_t, self.rho_t)
+
+        # switch off after updating once using fixed user preferences!
+        if switch_from_observed_user_preferences:
+            self.observed_user_preferences = False
 
     def _update_items(self, X, rows, cols):
 

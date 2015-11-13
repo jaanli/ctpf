@@ -234,6 +234,7 @@ if args.trained_user_preferences_file:
   h5f_t = h5py.File(args.trained_user_preferences_file)
   Et_t = h5f_t['Et_t'][:]
   Et_loaded = Et_t.T
+  print Et_loaded[0:100, 0:100]
   logger.info('loaded trained user preferences from fit file')
 else:
   Et_loaded = False
@@ -267,9 +268,10 @@ if args.model == 'pmf':
 elif args.model == 'ctpf':
   song2artist = np.array([n for n in range(n_docs)])
   # first fit vanilla poisson factorization for user preferences
+  hyper = 0.01
   coder = uaspmf.PoissonMF(n_components=n_categories, smoothness=100,
       max_iter=8, random_state=98765, verbose=True,
-      a=0.3, b=0.3, c=0.3, d=0.3, f=0.3, g=0.3, s2a=song2artist,
+      a=hyper, b=hyper, c=hyper, d=hyper, f=hyper, g=hyper, s2a=song2artist,
       min_iter=args.min_iterations,
       beta=observed_categories,
       theta=Et_loaded,
