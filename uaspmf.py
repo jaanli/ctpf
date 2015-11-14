@@ -187,12 +187,20 @@ class PoissonMF(BaseEstimator, TransformerMixin):
                     best_Eba = self.Eba
                     best_Ebs = self.Ebs
                     best_Et = self.Et
+                    best_Elogba = self.Elogba
+                    best_Elogbs = self.Elogbs
+                    best_Elogt = self.Elogt
                     best_validation_ll = validation_ll
                 self.logger.info('best validation ll was {}'.format(
                     best_validation_ll))
-                self.Eba = best_Eba
-                self.Ebs = best_Ebs
-                self.Et = best_Et
+            # set to best values
+            self.Eba = best_Eba
+            self.Ebs = best_Ebs
+            self.Et = best_Et
+            self.Elogt = best_Elogt
+            self.Elogbs = best_Elogbs
+            self.Elogba = best_Elogba
+
         else:
             self._update(X, rows, cols, vad)
         return self

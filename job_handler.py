@@ -9,7 +9,7 @@ import rec_eval
 import pandas as pd
 import numpy as np
 import scipy
-import pmf, hpmf, uaspmf, uaspmf_original
+import pmf, hpmf, uaspmf, uaspmf_original, ctpf
 import logging
 import util
 import h5py
@@ -269,7 +269,7 @@ elif args.model == 'ctpf':
   song2artist = np.array([n for n in range(n_docs)])
   # first fit vanilla poisson factorization for user preferences
   hyper = 0.3
-  coder = uaspmf.PoissonMF(n_components=n_categories, smoothness=100,
+  coder = ctpf.PoissonMF(n_components=n_categories, smoothness=100,
       max_iter=8, random_state=98765, verbose=True,
       a=hyper, b=hyper, c=hyper, d=hyper, f=hyper, g=hyper, s2a=song2artist,
       min_iter=args.min_iterations,
@@ -307,12 +307,12 @@ elif args.model == 'ctpf':
       coder.fit(train_data, rows, cols, validation)
 
     Et_t = np.ascontiguousarray(coder.Et.T)
-    Eba_t = np.ascontiguousarray(coder.Eba.T)
-    Ebs_t = np.ascontiguousarray(coder.Ebs.T)
-    Eb_t = Ebs_t + np.ascontiguousarray(coder.Eba[song2artist].T)
+    Eb_t = np.ascontiguousarray(coder.Eb.T)
+    Eeps_t = np.ascontiguousarray(coder.Eeps.T)
+    Eb_t = Eb_t + Eeps_t
     h5f.create_dataset('Et_t', data=Et_t)
-    h5f.create_dataset('Eba_t', data=Eba_t)
-    h5f.create_dataset('Ebs_t', data=Ebs_t)
+    h5f.create_dataset('Eb_t', data=Eb_t)
+    h5f.create_dataset('Eeps_t', data=Eeps_t)
 
 elif args.model == 'ctpf_original':
   song2artist = np.array([n for n in range(n_docs)])
